@@ -20,7 +20,7 @@ RUN mkdir /tmp/libusb && \
 	rm -rf /tmp/libusb
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
 
-# We want to populate the module cache based on the go.{mod,sum} files. 
+# We want to populate the module cache based on the go.{mod,sum} files.
 WORKDIR /src
 COPY go.mod .
 COPY go.sum .

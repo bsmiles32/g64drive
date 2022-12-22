@@ -804,8 +804,8 @@ Supported banks are: rom, sram256, sram768, flash, flash_pokstad2, eeprom.`,
 		Long: `Change the variant of CIC that the 64drive emulates, possibly autodetecting it from the current ROM header.
 The variant type can be specified using its name, such as "6103". By specifying "auto", the current ROM header
 will be transferred from 64drive and analyzed, and the correct CIC variant will be automatically selected.`,
-		Example: `  g64drive cic 6105     
-    -- sets CIC emulation to the 6105 variant.  
+		Example: `  g64drive cic 6105
+    -- sets CIC emulation to the 6105 variant.
 
   g64drive cic auto
     -- autodetect and set CIC type from the currently-loaded ROM header.`,
@@ -822,7 +822,7 @@ will be transferred from 64drive and analyzed, and the correct CIC variant will 
 		Long: `Change the variant of save memory that the 64drive emulates.
 The save type can be specified using one of the following names:
 "none", "eeprom4kbit", "eeprom16kbit", "sram256kbit", "flash1mbit", "sram768kbit", "flash1mbit_pokstad2".`,
-		Example: `  g64drive savetype eeprom16kbit     
+		Example: `  g64drive savetype eeprom16kbit
     -- sets save type emulation to EEPROM with 16Kbit of space.`,
 		RunE:         cmdSaveType,
 		Args:         cobra.ExactArgs(1),
