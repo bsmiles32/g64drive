@@ -523,7 +523,7 @@ func cmdDownload(cmd *cobra.Command, args []string) error {
 
 	size := flagSize.size
 	if size < 0 {
-		return errors.New("invalid size value (negative number")
+		return errors.New("invalid size value (negative number)")
 	}
 	vprintf("size: %v\n", size)
 
