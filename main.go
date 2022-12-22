@@ -790,9 +790,9 @@ Supported banks are: rom, sram256, sram768, flash, flash_pokstad2, eeprom.`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 	}
-	cmdDownload.Flags().VarP(&flagOffset, "offset", "o", "offset in memory at which the file will be uploaded")
+	cmdDownload.Flags().VarP(&flagOffset, "offset", "o", "offset in memory from which to start the download")
 	cmdDownload.Flags().VarP(&flagSize, "size", "s", "size of data to download")
-	cmdDownload.Flags().StringVarP(&flagBank, "bank", "b", "rom", "bank where data should be uploaded")
+	cmdDownload.Flags().StringVarP(&flagBank, "bank", "b", "rom", "bank where data should be downloaded")
 	cmdDownload.Flags().BoolVarP(&flagVerbose, "verbose", "v", false, "be verbose")
 	cmdDownload.Flags().IntVarP(&flagByteswapD, "byteswap", "w", 0, "byteswap format: 0=none, 2=16bit, 4=32bit")
 	cmdDownload.MarkFlagRequired("size")
