@@ -204,7 +204,7 @@ func NewSaveTypeFromString(name string) (SaveType, error) {
 // UpgradeStatus represents the current status of the firmware upgrade
 type UpgradeStatus uint8
 
-// These are the possible upgrade status that can occur during a firwmare upgrade.
+// These are the possible upgrade status that can occur during a firmware upgrade.
 // To read the current upgrade status, use Device.CmdUpgradeReport.
 const (
 	UpgradeReset     UpgradeStatus = 0x0

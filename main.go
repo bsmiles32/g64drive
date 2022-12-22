@@ -101,7 +101,7 @@ func flagBankParse() (drive64.Bank, error) {
 }
 
 // safeSigIntContext executes function f with a context which is canceled when CTRL+C is called.
-// This allows to for safe CTRL+C cancelation for functions that can't be aborted at any moment.
+// This allows to for safe CTRL+C cancellation for functions that can't be aborted at any moment.
 func safeSigIntContext(f func(ctx context.Context) error) error {
 	ctx := context.Background()
 
@@ -479,7 +479,7 @@ func cmdUpload(cmd *cobra.Command, args []string) error {
 						fmt.Printf("WARNING: the ROM requested a 1Mbit SRAM savetype, which is not supported by 64drive\n")
 						st = drive64.SaveNone
 					default:
-						vprintf("WARNING: invalid ED64 ROM confing header value: %02x\n", cfg)
+						vprintf("WARNING: invalid ED64 ROM config header value: %02x\n", cfg)
 					}
 				}
 			}
@@ -849,7 +849,7 @@ be accessible. Please notice that extended mode is only available on 64Drive HW2
 		Use:   "info [file.rpk]",
 		Short: "show information on 64drive firmware file",
 		Example: `  g64drive firmware info 64drive_firm_hw2_205.rpk
-	-- show information on the specified firwmare file.`,
+	-- show information on the specified firmware file.`,
 		RunE:         cmdFirmwareInfo,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
