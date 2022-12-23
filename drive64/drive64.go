@@ -418,3 +418,32 @@ func (d *Device) CmdFifoRead(ctx context.Context) (typ uint8, data []byte, err e
 	err = ctx.Err()
 	return
 }
+
+// CmdStandAloneEnter causes the device to enter standalone mode.
+// In this special mode, bus emulation is disabled, and instead
+// the 64drive unit will act as PI and SI bus master (like a real N64 would).
+// This mode requires the use of the UltraSave adapter.
+// Also firmware must be at least 2.03.
+// ErrUnsupported will be returned if firmware version is below 2.03.
+// FIXME?: add a Device.mode {Normal,StandAlone} member (or any suitable
+// mechanism) to track current mode so we can add some precondition checks in
+// functions requiring standalone mode and allow deferred call to
+// CmdStandAloneLeave to leave 64drive in normal state when we close the
+// device.
+func (d *Device) CmdStandAloneEnter() error {
+	_, fwver, _, err := d.CmdVersionRequest()
+	if err != nil {
+		return err
+	}
+	// Check firmware version and verify if it's new enough
+	if fwver < 203 {
+		return ErrUnsupported
+	}
+
+	return d.SendCmd(CmdStandAloneEnter, nil, nil, nil)
+}
+
+// CmdStandAloneLeave leave standalone mode and returns to normal mode.
+func (d *Device) CmdStandAloneLeave() error {
+	return d.SendCmd(CmdStandAloneLeave, nil, nil, nil)
+}

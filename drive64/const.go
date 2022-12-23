@@ -27,6 +27,10 @@ const (
 	CmdUpgradeStart Cmd = 0x84
 	// CmdUpgradeReport returns information on the ongoing firmware upgrade
 	CmdUpgradeReport Cmd = 0x85
+	// CmdStandAloneEnter causes the device to enter standalone mode
+	CmdStandAloneEnter Cmd = 0x88
+	// CmdStandAloneLeave causes the device to leave standalone mode
+	CmdStandAloneLeave Cmd = 0x89
 )
 
 // Variant represent the hardware variant (revision)
