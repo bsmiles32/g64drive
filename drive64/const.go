@@ -31,6 +31,8 @@ const (
 	CmdStandAloneEnter Cmd = 0x88
 	// CmdStandAloneLeave causes the device to leave standalone mode
 	CmdStandAloneLeave Cmd = 0x89
+	// CmdStandAlonePiRead32 performs a 32bit IO read on PI bus
+	CmdStandAlonePiRead32 Cmd = 0x90
 )
 
 // Variant represent the hardware variant (revision)

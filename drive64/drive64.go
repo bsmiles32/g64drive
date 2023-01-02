@@ -447,3 +447,17 @@ func (d *Device) CmdStandAloneEnter() error {
 func (d *Device) CmdStandAloneLeave() error {
 	return d.SendCmd(CmdStandAloneLeave, nil, nil, nil)
 }
+
+// CmdStandAlonePiRead32 performs a 32bit IO read on PI bus.
+// 64drive must be in standalone mode.
+func (d *Device) CmdStandAlonePiRead32(address uint32) (data uint32, err error) {
+	var buf [4]byte
+	var args [1]uint32
+	args[0] = address
+	if err = d.SendCmd(CmdStandAlonePiRead32, args[:], nil, buf[:]); err != nil {
+		return
+	}
+
+	data = binary.BigEndian.Uint32(buf[:])
+	return
+}
