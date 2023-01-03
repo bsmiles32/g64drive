@@ -475,3 +475,36 @@ func (d *Device) CmdStandAlonePiRead32(address uint32) (data uint32, err error) 
 	data = binary.BigEndian.Uint32(buf[:])
 	return
 }
+
+// CmdStandAlonePiReadBurst performs burst reads on PI bus.
+// 64drive must be in standalone mode.
+func (d *Device) CmdStandAlonePiReadBurst(ctx context.Context, w io.Writer, n int64, address uint32, burstLength uint32) error {
+	var cmdargs [2]uint32
+	cmdargs[0] = address
+	cmdargs[1] = burstLength / 4 // Apparently we must divide by 4 the burst length (see sample)
+
+	buf := make([]byte, burstLength)
+
+	for n > 0 && ctx.Err() == nil {
+		sz := int(burstLength)
+		if int64(sz) > n {
+			sz = int(n)
+		}
+
+		if err := d.SendCmdNoCmp(CmdStandAlonePiReadBurst, cmdargs[:], nil, buf); err != nil {
+			return err
+		}
+
+		read, err := w.Write(buf[:sz])
+		if err != nil {
+			return err
+		} else if read != sz {
+			panic("provided writer does not respect io.Writer interface")
+		}
+
+		cmdargs[0] += uint32(read)
+		n -= int64(read)
+	}
+
+	return ctx.Err()
+}
