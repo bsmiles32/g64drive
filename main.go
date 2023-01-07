@@ -748,6 +748,48 @@ func cmdDriverInstall(cmd *cobra.Command, args []string) error {
 	return windriver.Install()
 }
 
+
+func downloadPi(dev *drive64.Device, w io.Writer, size int64, address uint32, burstLength int, pbdesc string) error {
+	var pbw io.Writer
+	pbw = os.Stdout
+	if flagQuiet {
+		pbw = ioutil.Discard
+	}
+	pb := progressbar.NewOptions64(int64(size),
+		progressbar.OptionSetDescription(pbdesc),
+		progressbar.OptionSetWriter(pbw))
+	mw := io.MultiWriter(w, pb)
+
+	return safeSigIntContext(func(ctx context.Context) error {
+		defer fmt.Println()
+
+		buf := make([]byte, burstLength)
+		for size > 0 && ctx.Err() == nil {
+			sz := burstLength
+			if int64(sz) > size {
+				sz = int(size)
+			}
+
+			if err := dev.CmdStandAlonePiReadBurst(address, buf); err != nil {
+				return err
+			}
+
+			read, err := mw.Write(buf[:sz])
+			if err != nil {
+				return err
+			} else if read != sz {
+				panic("provided writer does not respect io.Writer interface")
+			}
+
+			address += uint32(read)
+			size -= int64(read)
+		}
+
+		return ctx.Err()
+	})
+}
+
+
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	dev, err := drive64.NewDeviceSingle()
 	if err != nil {
@@ -826,19 +868,7 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	}
 	defer f.Close()
 
-	pbdesc := "dump"
-	var pbw io.Writer
-	pbw = os.Stdout
-	if flagQuiet {
-		pbw = ioutil.Discard
-	}
-	pb := progressbar.NewOptions64(int64(rom_size.size),
-		progressbar.OptionSetDescription(pbdesc),
-		progressbar.OptionSetWriter(pbw))
-	return safeSigIntContext(func(ctx context.Context) error {
-		defer fmt.Println()
-		return dev.CmdStandAlonePiReadBurst(ctx, io.MultiWriter(bs.NewWriter(f), pb), rom_size.size, uint32(0x10000000), uint32(512))
-	})
+    return downloadPi(dev, bs.NewWriter(f), rom_size.size, uint32(0x10000000), 512, "dump")
 }
 
 func main() {

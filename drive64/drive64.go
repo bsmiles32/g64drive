@@ -478,33 +478,13 @@ func (d *Device) CmdStandAlonePiRead32(address uint32) (data uint32, err error) 
 
 // CmdStandAlonePiReadBurst performs burst reads on PI bus.
 // 64drive must be in standalone mode.
-func (d *Device) CmdStandAlonePiReadBurst(ctx context.Context, w io.Writer, n int64, address uint32, burstLength uint32) error {
+// burst length must be supported by the device connected at specified PI address.
+// This burst length likely corresponds to the PI_BSD "PageSize" value.
+// * Retail ROM : 512 bytes
+func (d *Device) CmdStandAlonePiReadBurst(address uint32, data []byte) error {
 	var cmdargs [2]uint32
 	cmdargs[0] = address
-	cmdargs[1] = burstLength / 4 // Apparently we must divide by 4 the burst length (see sample)
+	cmdargs[1] = uint32(len(data) / 4) // Burst length is probably expressed in 32bit words
 
-	buf := make([]byte, burstLength)
-
-	for n > 0 && ctx.Err() == nil {
-		sz := int(burstLength)
-		if int64(sz) > n {
-			sz = int(n)
-		}
-
-		if err := d.SendCmdNoCmp(CmdStandAlonePiReadBurst, cmdargs[:], nil, buf); err != nil {
-			return err
-		}
-
-		read, err := w.Write(buf[:sz])
-		if err != nil {
-			return err
-		} else if read != sz {
-			panic("provided writer does not respect io.Writer interface")
-		}
-
-		cmdargs[0] += uint32(read)
-		n -= int64(read)
-	}
-
-	return ctx.Err()
+	return d.SendCmdNoCmp(CmdStandAlonePiReadBurst, cmdargs[:], nil, data)
 }
