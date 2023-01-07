@@ -181,9 +181,9 @@ func (d *Device) Close() error {
 	return d.usb.Close()
 }
 
-// SendCmd sends a raw command to 64drive. This is a low-level method, most
-// clients should use one of the Cmd* methods.
-func (d *Device) SendCmd(cmd Cmd, args []uint32, in []byte, out []byte) error {
+// SendCmdNoCmp sends a raw command (without Completion Packet) to 64drive.
+// This is a low-level method, most clients should use one of the Cmd* methods.
+func (d *Device) SendCmdNoCmp(cmd Cmd, args []uint32, in []byte, out []byte) error {
 	var buf bytes.Buffer
 	var abuf [4]byte
 
@@ -207,12 +207,26 @@ func (d *Device) SendCmd(cmd Cmd, args []uint32, in []byte, out []byte) error {
 			return err
 		}
 	}
+
+	return nil
+}
+
+// SendCmd sends a raw command (with Completion Packet) to 64drive.
+// This is a low-level method, most clients should use one of the Cmd* methods.
+func (d *Device) SendCmd(cmd Cmd, args []uint32, in []byte, out []byte) error {
+	if err := d.SendCmdNoCmp(cmd, args, in, out); err != nil {
+		return err
+	}
+
+	// expect and check Completion Packet (CMP)
+	var abuf [4]byte
 	if _, err := io.ReadFull(&d.usb, abuf[:]); err != nil {
 		return err
 	}
 	if abuf[0] != 0x43 || abuf[1] != 0x4D || abuf[2] != 0x50 || abuf[3] != byte(cmd) {
 		return fmt.Errorf("SendCmd: invalid completion packet (%x)", abuf)
 	}
+
 	return nil
 }
 
