@@ -105,6 +105,8 @@ func ByteSwapDetect(romHeader []byte) (ByteSwapper, error) {
 			return BSTwo, nil
 		case 0x40123780:
 			return BSFour, nil
+		default:
+			return BSNone, nil // assume no byteswap
 		}
 	}
 	return BSNone, ErrCannotDetectByteswap
