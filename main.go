@@ -39,6 +39,10 @@ var (
 	flagByteswapD    int
 	flagByteswapU    int
 	flagFwExtractOut string
+	flagPiAddress    uint32
+	flagPiSize       sizeUnit
+	flagPiBurstLen   int
+	flagPiByteswapD  int
 
 	pflagAutoCic      *pflag.Flag
 	pflagAutoSave     *pflag.Flag
@@ -748,7 +752,6 @@ func cmdDriverInstall(cmd *cobra.Command, args []string) error {
 	return windriver.Install()
 }
 
-
 func downloadPi(dev *drive64.Device, w io.Writer, size int64, address uint32, burstLength int, pbdesc string) error {
 	var pbw io.Writer
 	pbw = os.Stdout
@@ -789,6 +792,55 @@ func downloadPi(dev *drive64.Device, w io.Writer, size int64, address uint32, bu
 	})
 }
 
+func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
+	dev, err := drive64.NewDeviceSingle()
+	if err != nil {
+		return err
+	}
+	defer dev.Close()
+	vprintf("64drive serial: %v\n", dev.Description().Serial)
+
+	var bs drive64.ByteSwapper
+	if flagPiByteswapD == 0 || flagPiByteswapD == 2 || flagPiByteswapD == 4 {
+		bs = drive64.ByteSwapper(flagPiByteswapD)
+	} else {
+		return errors.New("invalid byteswap value")
+	}
+	vprintf("byteswap: %v\n", bs)
+
+	f, err := os.Create(args[0])
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	size := flagPiSize.size
+	if size < 0 {
+		return errors.New("invalid size value (negative number)")
+	}
+	vprintf("size: %v\n", size)
+
+	address := flagPiAddress
+	vprintf("address: %v\n", address)
+
+	burstLen := flagPiBurstLen
+	vprintf("burst size: %v\n", burstLen)
+
+	// Check firmware version and verify if it's new enough
+	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
+		if fwver < 203 {
+			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
+		}
+	}
+
+	err = dev.CmdStandAloneEnter()
+	if err != nil {
+		return err
+	}
+	defer dev.CmdStandAloneLeave()
+
+	return downloadPi(dev, bs.NewWriter(f), size, address, burstLen, filepath.Base(args[0]))
+}
 
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	dev, err := drive64.NewDeviceSingle()
@@ -815,7 +867,6 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	printf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
 
 	// Try to deduce ROM size by probing different addresses with 1MB granularity.
@@ -844,8 +895,8 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 		if data == last_data {
 			counter += 1
 			if counter >= 5 {
-				 rom_size.size -= int64(5 * 0x100000)
-				 break
+				rom_size.size -= int64(5 * 0x100000)
+				break
 			}
 		} else {
 			counter = 0
@@ -856,19 +907,7 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	}
 
 	printf("Guessing a ROM size of %v\n", rom_size)
-
-	if rom_size.size == int64(0) {
-		return nil
-	}
-
-	bs := drive64.ByteSwapper(0)
-	f, err := os.Create("dump.z64")
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-    return downloadPi(dev, bs.NewWriter(f), rom_size.size, uint32(0x10000000), 512, "dump")
+	return nil
 }
 
 func main() {
@@ -1027,16 +1066,31 @@ No proprietary FTDI/D2XX is required and will not be installed.`,
 	}
 
 	var cmdUltraSaveProbe = &cobra.Command{
-		Use:		  "probe",
-		Short:		  "probe ultrasave cart",
-		RunE:		  cmdUltraSaveProbe,
+		Use:   "probe",
+		Short: "probe ultrasave cart",
+		RunE:  cmdUltraSaveProbe,
 	}
 
-	var cmdUltraSave = &cobra.Command{
-		Use:	"ultrasave",
-		Short:	"ultra save functions",
+	var cmdUltraSaveDownload = &cobra.Command{
+		Use:          "download [file]",
+		Short:        "download data from cart plugged into ultrasave",
+		RunE:         cmdUltraSaveDownload,
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
 	}
-	cmdUltraSave.AddCommand(cmdUltraSaveProbe)
+	cmdUltraSaveDownload.Flags().Uint32VarP(&flagPiAddress, "address", "a", uint32(0x10000000), "pi address from which to start the download")
+	cmdUltraSaveDownload.Flags().VarP(&flagPiSize, "size", "s", "size of data to download")
+	cmdUltraSaveDownload.Flags().IntVarP(&flagPiBurstLen, "burstlen", "b", 512, "burst length")
+	cmdUltraSaveDownload.Flags().BoolVarP(&flagVerbose, "verbose", "v", false, "be verbose")
+	cmdUltraSaveDownload.Flags().IntVarP(&flagPiByteswapD, "byteswap", "w", 0, "byteswap format: 0=none, 2=16bit, 4=32bit")
+	cmdUltraSaveDownload.MarkFlagRequired("address")
+	cmdUltraSaveDownload.MarkFlagRequired("size")
+
+	var cmdUltraSave = &cobra.Command{
+		Use:   "ultrasave",
+		Short: "ultra save functions",
+	}
+	cmdUltraSave.AddCommand(cmdUltraSaveProbe, cmdUltraSaveDownload)
 
 	var rootCmd = &cobra.Command{
 		Use: "g64drive",
