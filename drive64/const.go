@@ -37,6 +37,8 @@ const (
 	CmdStandAlonePiWrite32 Cmd = 0x91
 	// CmdStandAlonePiReadBurst performs burst read on PI bus
 	CmdStandAlonePiReadBurst Cmd = 0x92
+	// CmdStandAlonePiWriteBurst performs burst write on PI bus
+	CmdStandAlonePiWriteBurst Cmd = 0x93
 )
 
 // Variant represent the hardware variant (revision)

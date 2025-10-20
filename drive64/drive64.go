@@ -497,3 +497,15 @@ func (d *Device) CmdStandAlonePiReadBurst(address uint32, data []byte) error {
 
 	return d.SendCmdNoCmp(CmdStandAlonePiReadBurst, cmdargs[:], nil, data)
 }
+
+// CmdStandAlonePiWriteBurst performs burst write on PI bus.
+// 64drive must be in standalone mode.
+// burst length must be supported by the device connected at specified PI address.
+// This burst length likely corresponds to the PI_BSD "PageSize" value.
+func (d *Device) CmdStandAlonePiWriteBurst(address uint32, data []byte) error {
+	var cmdargs [2]uint32
+	cmdargs[0] = address
+	cmdargs[1] = uint32(len(data) / 4) // Burst length is probably expressed in 32bit words
+
+	return d.SendCmdNoCmp(CmdStandAlonePiWriteBurst, cmdargs[:], data, nil)
+}
