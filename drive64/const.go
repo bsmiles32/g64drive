@@ -33,6 +33,8 @@ const (
 	CmdStandAloneLeave Cmd = 0x89
 	// CmdStandAlonePiRead32 performs a 32bit IO read on PI bus
 	CmdStandAlonePiRead32 Cmd = 0x90
+	// CmdStandAlonePiWrite32 performs a 32bit IO write on PI bus
+	CmdStandAlonePiWrite32 Cmd = 0x91
 	// CmdStandAlonePiReadBurst performs burst read on PI bus
 	CmdStandAlonePiReadBurst Cmd = 0x92
 )

@@ -476,6 +476,15 @@ func (d *Device) CmdStandAlonePiRead32(address uint32) (data uint32, err error) 
 	return
 }
 
+// CmdStandAlonePiWrite32 performs a 32bit IO write on PI bus.
+// 64drive must be in standalone mode.
+func (d *Device) CmdStandAlonePiWrite32(address, data uint32) error {
+	var args [2]uint32
+	args[0] = address
+	args[1] = data
+	return d.SendCmd(CmdStandAlonePiWrite32, args[:], nil, nil)
+}
+
 // CmdStandAlonePiReadBurst performs burst reads on PI bus.
 // 64drive must be in standalone mode.
 // burst length must be supported by the device connected at specified PI address.
