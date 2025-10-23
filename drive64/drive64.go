@@ -503,6 +503,15 @@ func (d *Device) CmdStandAlonePiReadBurst(address uint32, data []byte) error {
 // burst length must be supported by the device connected at specified PI address.
 // This burst length likely corresponds to the PI_BSD "PageSize" value.
 func (d *Device) CmdStandAlonePiWriteBurst(address uint32, data []byte) error {
+	// PiWriteBurst doesn't work on firmware <2.04
+	_, fwver, _, err := d.CmdVersionRequest()
+	if err != nil {
+		return err
+	}
+	if fwver < 204 {
+		return ErrUnsupported
+	}
+
 	var cmdargs [2]uint32
 	cmdargs[0] = address
 	cmdargs[1] = uint32(len(data) / 4) // Burst length is probably expressed in 32bit words
