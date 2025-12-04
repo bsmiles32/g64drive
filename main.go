@@ -22,7 +22,10 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/rasky/g64drive/drive64"
 	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/eeprom"
 	"github.com/rasky/g64drive/ultrasave/flash"
+	"github.com/rasky/g64drive/ultrasave/joybus"
+	"github.com/rasky/g64drive/ultrasave/rtc"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -1144,6 +1147,106 @@ func cmdFlashWrite(cmd *cobra.Command, args []string) error {
 	})
 }
 
+func joybusIdentify(dev *drive64.Device) (joybus.Device, error) {
+	si := ultrasave.Drive64SerialInterfaceAdapter{dev}
+	jdev := joybus.DeviceImpl{SI: si}
+
+	vprintf("probing for regular Joybus devices\n")
+	devID, _, err := jdev.Info()
+	switch err {
+	case nil: /*  do nothing */
+	case drive64.ErrFrozen:
+		// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
+		// so SI device can accept further commands (after having recieved an unknown command).
+		// I don't have a good understanding of why this work and why this is needed,
+		// but it seems to work on 64drive HW1 FW2.03 and 64drive HW2 FW2.05 (linux).
+		time.Sleep(2700 * time.Millisecond)
+		dev.Reset()
+	default:
+		return nil, err
+	}
+
+	switch devID {
+	case 0x0000: /* no answer from joybus device */
+	case eeprom.ID4kb, eeprom.ID16kb:
+		vprintf("found EEPROM\n")
+		return &eeprom.Eeprom{jdev}, nil
+	default:
+		/* return generic joybus device */
+		vprintf("unknown device ID: %04x\n", devID)
+		return &jdev, nil
+	}
+
+	vprintf("probing for RTC joybus devices\n")
+	devID, _, err = (&rtc.Rtc{jdev}).Info()
+	switch err {
+	case nil: /*  do nothing */
+	case drive64.ErrFrozen:
+		// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
+		// so SI device can accept further commands (after having recieved an unknown command).
+		// I don't have a good understanding of why this work and why this is needed,
+		// but it seems to work on 64drive HW1 FW2.03 and 64drive HW2 FW2.05 (linux).
+		time.Sleep(2700 * time.Millisecond)
+		dev.Reset()
+	default:
+		return nil, err
+	}
+
+	switch devID {
+	case 0x0000: /* no answer from joybus device */
+	case rtc.ID:
+		vprintf("found RTC\n")
+		return &(rtc.Rtc{jdev}), nil
+	default:
+		/* return generic joybus device */
+		vprintf("unknown device ID: %04x\n", devID)
+		return &jdev, nil
+	}
+
+	return nil, fmt.Errorf("No joybus device detected")
+}
+
+func cmdSiProbe(cmd *cobra.Command, args []string) error {
+	dev, err := drive64.NewDeviceSingle()
+	if err != nil {
+		return err
+	}
+	defer dev.Close()
+	vprintf("64drive serial: %v\n", dev.Description().Serial)
+
+	// Check firmware version and verify if it's new enough
+	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
+		if fwver < 203 {
+			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
+		}
+	}
+
+	err = dev.CmdStandAloneEnter()
+	if err != nil {
+		return err
+	}
+	defer dev.CmdStandAloneLeave()
+
+	jdev, err := joybusIdentify(dev)
+	if err != nil {
+		return err
+	}
+
+	id, status, err := jdev.Info()
+	if err != nil {
+		return err
+	}
+
+	if id == 0 {
+		printf("No device detected\n")
+		return nil
+	}
+
+	printf("Joybus device id=%04x status=%02x\n", id, status)
+
+	return nil
+}
+
 func main() {
 	var cmdList = &cobra.Command{
 		Use:          "list",
@@ -1366,11 +1469,18 @@ No proprietary FTDI/D2XX is required and will not be installed.`,
 
 	cmdFlash.AddCommand(cmdFlashSiliconId, cmdFlashStatus, cmdFlashRead, cmdFlashWrite)
 
+	var cmdSiProbe = &cobra.Command{
+		Use:          "siprobe",
+		Short:        "Probe SI device",
+		RunE:         cmdSiProbe,
+		SilenceUsage: true,
+	}
+
 	var cmdUltraSave = &cobra.Command{
 		Use:   "ultrasave",
 		Short: "ultra save functions",
 	}
-	cmdUltraSave.AddCommand(cmdFlash, cmdUltraSaveProbe, cmdUltraSaveDownload)
+	cmdUltraSave.AddCommand(cmdFlash, cmdSiProbe, cmdUltraSaveProbe, cmdUltraSaveDownload)
 
 	var rootCmd = &cobra.Command{
 		Use: "g64drive",
