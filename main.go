@@ -22,7 +22,10 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/rasky/g64drive/drive64"
 	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/eeprom"
 	"github.com/rasky/g64drive/ultrasave/flash"
+	"github.com/rasky/g64drive/ultrasave/joybus"
+	"github.com/rasky/g64drive/ultrasave/rtc"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -856,6 +859,89 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 	})
 }
 
+func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
+	jdev := joybus.DeviceImpl{SI: ultrasave.Drive64SerialInterfaceAdapter{dev}}
+
+	probes := []struct {
+		class   string
+		info    func() (joybus.DeviceID, joybus.Status, error)
+		devices map[joybus.DeviceID]struct {
+			name    string
+			factory func() joybus.Device
+		}
+	}{
+		{
+			class: "regular",
+			info:  func() (joybus.DeviceID, joybus.Status, error) { return jdev.Info() },
+			devices: map[joybus.DeviceID]struct {
+				name    string
+				factory func() joybus.Device
+			}{
+				eeprom.ID4kb: {
+					name:    "EEPROM 4kb",
+					factory: func() joybus.Device { return &eeprom.Eeprom{jdev} },
+				},
+				eeprom.ID16kb: {
+					name:    "EEPROM 16kb",
+					factory: func() joybus.Device { return &eeprom.Eeprom{jdev} },
+				},
+			},
+		},
+		{
+			class: "rtc",
+			info:  func() (joybus.DeviceID, joybus.Status, error) { return (&rtc.Rtc{jdev}).Info() },
+			devices: map[joybus.DeviceID]struct {
+				name    string
+				factory func() joybus.Device
+			}{
+				rtc.ID: {
+					name:    "RTC",
+					factory: func() joybus.Device { return &rtc.Rtc{jdev} },
+				},
+			},
+		},
+	}
+
+	for _, p := range probes {
+		vprintf("Probing for %s Joybus devices\n", p.class)
+		devID, _, err := p.info()
+
+		switch err {
+		case nil:
+		// We didn't get any response from joybus device, unfreeze the 64drive/SI device
+		// and try next probing method
+		case drive64.ErrFrozen:
+			// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
+			// so SI device can accept further commands (after having received an unknown command).
+			// I don't have a good understanding of why this work and why this is needed,
+			// but it seems to work on 64drive HW1 FW2.03 and 64drive HW2 FW2.05 (linux).
+			time.Sleep(2700 * time.Millisecond)
+			dev.Reset()
+			continue
+		default:
+			return nil, err
+		}
+
+		// Try next probing method if we get a Zero DeviceID
+		if devID == 0x0000 {
+			continue
+		}
+
+		// Either return a device using specific factory
+		// or just a generic joybus device impl if device ID is unknown.
+		if device, ok := p.devices[devID]; ok {
+			printf("Found %s (ID = %04x)\n", device.name, devID)
+			return device.factory(), nil
+		} else {
+			printf("unknown device ID: %04x\n", devID)
+			return &jdev, nil
+		}
+	}
+
+	printf("No joybus device detected\n")
+	return nil, nil
+}
+
 // Heuristic procedure to guess ROM size
 func guessRomSize(dev *drive64.Device) (sizeUnit, error) {
 	// Try to deduce ROM size by probing different addresses with 1MB granularity.
@@ -904,8 +990,16 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer dev.Close()
+	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
+		// Probe Joybus devices
+		_, err := joybusProbe(dev)
+		if err != nil {
+			printf("Error while probing joybus: %v\n", err)
+		}
+
+		// Probe cart ROM
 		address := uint32(0x10000000)
 		pi_dom_cfg, err := dev.CmdStandAlonePiRead32(address)
 		if err != nil {
@@ -919,6 +1013,13 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 		}
 
 		printf("Guessing a ROM size of %v\n", romSize)
+
+		// TODO: Add heuristic to guess if some PI device is in Dom2 (Flash / SRAM)
+
+		// TODO: allow for extended PI probing
+
+		// TODO: give a summary of found devices
+
 		return nil
 	})
 }
@@ -1314,6 +1415,7 @@ No proprietary FTDI/D2XX is required and will not be installed.`,
 		Short: "probe ultrasave cart",
 		RunE:  cmdUltraSaveProbe,
 	}
+	cmdUltraSaveProbe.Flags().BoolVarP(&flagVerbose, "verbose", "v", false, "be verbose")
 
 	var cmdUltraSaveDownload = &cobra.Command{
 		Use:          "download [file]",
