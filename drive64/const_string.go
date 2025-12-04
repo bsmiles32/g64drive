@@ -22,6 +22,7 @@ func _() {
 	_ = x[CmdStandAlonePiWrite32-145]
 	_ = x[CmdStandAlonePiReadBurst-146]
 	_ = x[CmdStandAlonePiWriteBurst-147]
+	_ = x[CmdStandAloneSiOperation-152]
 }
 
 const (
@@ -34,6 +35,7 @@ const (
 	_Cmd_name_6 = "CmdUpgradeStartCmdUpgradeReport"
 	_Cmd_name_7 = "CmdStandAloneEnterCmdStandAloneLeave"
 	_Cmd_name_8 = "CmdStandAlonePiRead32CmdStandAlonePiWrite32CmdStandAlonePiReadBurstCmdStandAlonePiWriteBurst"
+	_Cmd_name_9 = "CmdStandAloneSiOperation"
 )
 
 var (
@@ -65,6 +67,8 @@ func (i Cmd) String() string {
 	case 144 <= i && i <= 147:
 		i -= 144
 		return _Cmd_name_8[_Cmd_index_8[i]:_Cmd_index_8[i+1]]
+	case i == 152:
+		return _Cmd_name_9
 	default:
 		return "Cmd(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
