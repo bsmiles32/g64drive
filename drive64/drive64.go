@@ -530,3 +530,32 @@ func (d *Device) CmdStandAlonePiWriteBurst(address uint32, data []byte) error {
 
 	return d.SendCmdNoCmp(CmdStandAlonePiWriteBurst, cmdargs[:], data, nil)
 }
+
+func (d *Device) CmdStandAloneSiOperation(tx, rx []byte) error {
+	var in [12]byte
+	var out [8]byte
+
+	if len(tx) > len(in) {
+		tx = tx[:len(in)]
+	}
+	if len(rx) > len(out) {
+		rx = rx[:len(out)]
+	}
+
+	// TX and RX are expressed in bits
+	in[0] = byte(8 * len(tx))
+	in[1] = byte(8 * len(rx))
+	copy(in[2:2+len(tx)], tx)
+
+	//fmt.Printf("SI tx=%02x in=%02x\n", tx, in)
+
+	if err := d.SendCmd(CmdStandAloneSiOperation, nil, in[:], out[:]); err != nil {
+		return err
+	}
+
+	copy(rx, out[len(out)-len(rx):])
+
+	//fmt.Printf("SI rx=%02x out=%02x\n", rx, out)
+
+	return nil
+}
