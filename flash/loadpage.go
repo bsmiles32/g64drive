@@ -7,7 +7,8 @@ import (
 // Load a maximum of 128 bytes into internal page before programming.
 // Assume erased state of internal page (eg. all bits set).
 func (f *Flash) LoadBytePage(data []byte) error {
-	if len(data) > f.layout.PageSize() {
+	// 64drive only support bursts length which are multiple of 4.
+	if len(data) > f.layout.PageSize() || len(data)%4 != 0 {
 		return ErrInvalidPageSize
 	}
 

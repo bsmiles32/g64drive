@@ -491,9 +491,15 @@ func (d *Device) CmdStandAlonePiWrite32(address, data uint32) error {
 // This burst length likely corresponds to the PI_BSD "PageSize" value.
 // * Retail ROM : 512 bytes
 func (d *Device) CmdStandAlonePiReadBurst(address uint32, data []byte) error {
+	// 64drive seems to only supports burst of length multiple of 32bits.
+	burstLength := len(data)
+	if burstLength%4 != 0 {
+		return ErrUnsupported
+	}
+
 	var cmdargs [2]uint32
 	cmdargs[0] = address
-	cmdargs[1] = uint32(len(data) / 4) // Burst length is probably expressed in 32bit words
+	cmdargs[1] = uint32(burstLength / 4) // expressed in number of 32bit words
 
 	return d.SendCmdNoCmp(CmdStandAlonePiReadBurst, cmdargs[:], nil, data)
 }
@@ -512,9 +518,15 @@ func (d *Device) CmdStandAlonePiWriteBurst(address uint32, data []byte) error {
 		return ErrUnsupported
 	}
 
+	// 64drive seems to only supports burst of length multiple of 32bits.
+	burstLength := len(data)
+	if burstLength%4 != 0 {
+		return ErrUnsupported
+	}
+
 	var cmdargs [2]uint32
 	cmdargs[0] = address
-	cmdargs[1] = uint32(len(data) / 4) // Burst length is probably expressed in 32bit words
+	cmdargs[1] = uint32(burstLength / 4) // expressed in number of 32bit words
 
 	return d.SendCmdNoCmp(CmdStandAlonePiWriteBurst, cmdargs[:], data, nil)
 }
