@@ -3,28 +3,20 @@
 // It also provides higher level IO functions for convenience.
 package flash
 
-// Flash is accessed through Parallel Interface using 32bit addresses.
-type Address uint32
+import (
+	"github.com/rasky/g64drive/ultrasave"
+)
 
 // Flash are usually mapped at PI address 0x08000000.
-const DefaultBaseAddress = Address(0x08000000)
-
-// ParallelInterface provides 32bit IO and burst IO.
-// This interface decouple and abstract all interactions with the PI.
-type ParallelInterface interface {
-	Read32(address Address) (uint32, error)
-	Write32(address Address, data uint32) error
-	ReadBurst(address Address, data []byte) error
-	WriteBurst(address Address, data []byte) error
-}
+const DefaultBaseAddress = ultrasave.PiAddress(0x08000000)
 
 type Flash struct {
-	pi          ParallelInterface
-	baseAddress Address
+	pi          ultrasave.ParallelInterface
+	baseAddress ultrasave.PiAddress
 	layout      Layout
 }
 
-func New(pi ParallelInterface, opts ...FlashOption) (*Flash, error) {
+func New(pi ultrasave.ParallelInterface, opts ...FlashOption) (*Flash, error) {
 	f := &Flash{
 		pi:          pi,
 		baseAddress: DefaultBaseAddress,

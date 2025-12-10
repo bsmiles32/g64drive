@@ -2,6 +2,7 @@ package flash
 
 import (
 	"fmt"
+	"github.com/rasky/g64drive/ultrasave"
 )
 
 // Command Internal Register (CIR) accepts 32-bit commands.
@@ -23,7 +24,7 @@ const (
 // Write command to CIR.
 func (f *Flash) writeCIR(cmd Command) error {
 	// CIR is located a flash address 0x00010000.
-	const cirOffset = Address(0x00010000)
+	const cirOffset = ultrasave.PiAddress(0x00010000)
 	return f.pi.Write32(f.baseAddress+cirOffset, uint32(cmd))
 }
 

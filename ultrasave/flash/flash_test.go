@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rasky/g64drive/drive64"
+	"github.com/rasky/g64drive/ultrasave"
 )
 
 /* This is a collection of test that demonstrate some hardware behaviors.
@@ -71,7 +72,7 @@ func setup(t *testing.T, opts ...FlashOption) *Flash {
 		dev.CmdStandAloneLeave()
 	})
 
-	fla, err := New(Drive64ParallelInterfaceAdapter{dev}, opts...)
+	fla, err := New(ultrasave.Drive64ParallelInterfaceAdapter{dev}, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,14 +93,14 @@ func (f *Flash) mustWriteCIR(t *testing.T, cmd Command) {
 	}
 }
 
-func (f *Flash) mustWriteIO(t *testing.T, offset Address, data uint32) {
+func (f *Flash) mustWriteIO(t *testing.T, offset ultrasave.PiAddress, data uint32) {
 	t.Helper()
 	if err := f.pi.Write32(f.baseAddress+offset, data); err != nil {
 		t.Fatalf("unable to perform PI IO write [offset = %05x]: %v", offset, err)
 	}
 }
 
-func (f *Flash) mustReadIO(t *testing.T, offset Address) uint32 {
+func (f *Flash) mustReadIO(t *testing.T, offset ultrasave.PiAddress) uint32 {
 	t.Helper()
 	u32, err := f.pi.Read32(f.baseAddress + offset)
 	if err != nil {
@@ -108,7 +109,7 @@ func (f *Flash) mustReadIO(t *testing.T, offset Address) uint32 {
 	return u32
 }
 
-func (f *Flash) mustReadBurst(t *testing.T, offset Address, size int) []byte {
+func (f *Flash) mustReadBurst(t *testing.T, offset ultrasave.PiAddress, size int) []byte {
 	t.Helper()
 	data := make([]byte, size)
 	if err := f.pi.ReadBurst(f.baseAddress+offset, data); err != nil {
@@ -574,7 +575,7 @@ func TestReads(t *testing.T) {
 			// range [0x00000:0x0ffff] always return the pattern 00 <u8> 00 <u8> (with u8 being the status register bits)
 			t.Run("range 0x00000:0x0ffff", func(t *testing.T) {
 				for i := 0; i < 0x100; i += 4 {
-					u32 := f.mustReadIO(t, Address(i))
+					u32 := f.mustReadIO(t, ultrasave.PiAddress(i))
 					expected, got := expectedRead32(Status(u32&0xff)), u32
 					if expected != got {
 						t.Errorf("unexpected values @%05x expected %08x != got %08x", i, expected, got)
@@ -586,7 +587,7 @@ func TestReads(t *testing.T) {
 			// writing a new value to CIR is needed to "reset" internal state and allow proper reading
 			t.Run("range 0x10000:0x1ffff", func(t *testing.T) {
 				for i := 0x1cba4; i < 0x1cca4; i += 4 {
-					u32 := f.mustReadIO(t, Address(i))
+					u32 := f.mustReadIO(t, ultrasave.PiAddress(i))
 					expected, got := loExtend(u32), u32
 					if expected != got {
 						t.Errorf("unexpected values @%05x expected %08x != got %08x", i, expected, got)
@@ -596,7 +597,7 @@ func TestReads(t *testing.T) {
 				// after reading in open range values, all other read will return open range values
 				// until we reset CIR
 				t.Run("corrupted reads after open bus", func(t *testing.T) {
-					i := Address(4)
+					i := ultrasave.PiAddress(4)
 					u32 := f.mustReadIO(t, i)
 					expected, got := loExtend(u32), u32
 					if expected != got {
@@ -607,7 +608,7 @@ func TestReads(t *testing.T) {
 				f.mustWriteCIR(t, cmdStatus)
 
 				t.Run("proper read after new CIR", func(t *testing.T) {
-					i := Address(4)
+					i := ultrasave.PiAddress(4)
 					u32 := f.mustReadIO(t, i)
 					expected, got := expectedRead32(Status(u32&0xff)), u32
 					if expected != got {
@@ -622,7 +623,7 @@ func TestReads(t *testing.T) {
 			// offset doesn't matter, just the size of the burst
 			t.Run("range [0x00000:0x0ffff]", func(t *testing.T) {
 				testCases := []struct {
-					offset Address
+					offset ultrasave.PiAddress
 					size   int
 				}{
 					{offset: 0x00000, size: 0x04},
@@ -718,7 +719,7 @@ func TestReads(t *testing.T) {
 			// range [0x00000:0x0ffff] always return the first u32 (eg. TypeID)
 			t.Run("range 0x00000:0x0ffff", func(t *testing.T) {
 				for i := 0; i < 0x100; i += 4 {
-					u32 := f.mustReadIO(t, Address(i))
+					u32 := f.mustReadIO(t, ultrasave.PiAddress(i))
 					expected, got := expectedRead32(), u32
 					if expected != got {
 						t.Errorf("unexpected values @%05x expected %08x != got %08x", i, expected, got)
@@ -732,7 +733,7 @@ func TestReads(t *testing.T) {
 				// writing a new value to CIR is needed to "reset" internal state and allow proper reading
 				t.Run("range 0x10000:0x1ffff", func(t *testing.T) {
 					for i := 0x1cba4; i < 0x1cca4; i += 4 {
-						u32 := f.mustReadIO(t, Address(i))
+						u32 := f.mustReadIO(t, ultrasave.PiAddress(i))
 						expected, got := loExtend(u32), u32
 						if expected != got {
 							t.Errorf("unexpected values @%05x expected %08x != got %08x", i, expected, got)
@@ -742,7 +743,7 @@ func TestReads(t *testing.T) {
 					// after reading in open range values, all other read will return open range values
 					// until we reset CIR
 					t.Run("corrupted reads after open bus", func(t *testing.T) {
-						i := Address(4)
+						i := ultrasave.PiAddress(4)
 						u32 := f.mustReadIO(t, i)
 						expected, got := loExtend(u32), u32
 						if expected != got {
@@ -753,7 +754,7 @@ func TestReads(t *testing.T) {
 					f.mustWriteCIR(t, cmdSiliconID)
 
 					t.Run("proper read after new CIR", func(t *testing.T) {
-						i := Address(4)
+						i := ultrasave.PiAddress(4)
 						u32 := f.mustReadIO(t, i)
 						expected, got := expectedRead32(), u32
 						if expected != got {
@@ -765,7 +766,7 @@ func TestReads(t *testing.T) {
 				// range [0x10000:0x1ffff] still returns SiliconID
 				t.Run("range 0x10000:0x1ffff", func(t *testing.T) {
 					for i := 0; i < 0x100; i += 4 {
-						u32 := f.mustReadIO(t, Address(i))
+						u32 := f.mustReadIO(t, ultrasave.PiAddress(i))
 						expected, got := expectedRead32(), u32
 						if expected != got {
 							t.Errorf("unexpected values @%05x expected %08x != got %08x", i, expected, got)
@@ -780,7 +781,7 @@ func TestReads(t *testing.T) {
 			// offset doesn't matter, just the size of the burst
 			t.Run("range 0x00000:0x0ffff", func(t *testing.T) {
 				testCases := []struct {
-					offset Address
+					offset ultrasave.PiAddress
 					size   int
 				}{
 					{offset: 0x00000, size: 0x04},
@@ -1096,8 +1097,8 @@ func TestWrites(t *testing.T) {
 	// Detect if writes to internal page can only clear bits
 	// By writing a value and it's inverse in the same location we should get all bits cleared
 	// if it's the case otherwise we get the last written value.
-	f.mustWriteIO(t, Address(0x10), 0xdeadbeef)
-	f.mustWriteIO(t, Address(0x10), ^uint32(0xdeadbeef))
+	f.mustWriteIO(t, ultrasave.PiAddress(0x10), 0xdeadbeef)
+	f.mustWriteIO(t, ultrasave.PiAddress(0x10), ^uint32(0xdeadbeef))
 
 	var expectedHoleData = ^uint32(0xdeadbeef)
 
@@ -1105,14 +1106,14 @@ func TestWrites(t *testing.T) {
 	case "MN63F8MPN":
 		t.Run("writes to internal page only clear bits", func(t *testing.T) {
 			expectedHoleData = uint32(0)
-			u32 := f.mustReadIO(t, Address(0x10))
+			u32 := f.mustReadIO(t, ultrasave.PiAddress(0x10))
 			if expected, got := expectedHoleData, u32; expected != got {
 				t.Errorf("unexpected values expected %08x != got %08x", expected, got)
 			}
 		})
 	default: // MX29L1100
 		t.Run("writes to internal page behave normally", func(t *testing.T) {
-			u32 := f.mustReadIO(t, Address(0x10))
+			u32 := f.mustReadIO(t, ultrasave.PiAddress(0x10))
 			if expected, got := expectedHoleData, u32; expected != got {
 				t.Errorf("unexpected values expected %08x != got %08x", expected, got)
 			}
@@ -1139,7 +1140,7 @@ func TestWrites(t *testing.T) {
 		if k >= 0x20 && k < 0x30 {
 			continue
 		}
-		f.mustWriteIO(t, Address(k), binary.BigEndian.Uint32(v))
+		f.mustWriteIO(t, ultrasave.PiAddress(k), binary.BigEndian.Uint32(v))
 	}
 
 	// Read back internal page
@@ -1274,7 +1275,7 @@ func TestWrites(t *testing.T) {
 	t.Run("internal page is erased after programming - internal page can be read using IO", func(t *testing.T) {
 		f.mustWriteCIR(t, cmdLoadBytePage)
 		for k := 0; k < pageSize; k += 4 {
-			expected, got := uint32(0xffffffff), f.mustReadIO(t, Address(k))
+			expected, got := uint32(0xffffffff), f.mustReadIO(t, ultrasave.PiAddress(k))
 			if expected != got {
 				t.Errorf("unexpected value @%05x after programming: %08x != %08x", k, expected, got)
 			}
