@@ -21,7 +21,8 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/rasky/g64drive/drive64"
-	"github.com/rasky/g64drive/flash"
+	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/flash"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -920,7 +921,7 @@ func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -931,7 +932,6 @@ func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
 		}
 
 		printf("Silicon ID: %x - Manufacturer: %s Device: %s\n", siliconID, siliconID.Manufacturer(), siliconID.Device())
-
 		return nil
 	})
 }
@@ -944,7 +944,7 @@ func cmdFlashStatus(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -985,7 +985,7 @@ func cmdFlashRead(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -1077,7 +1077,7 @@ func cmdFlashWrite(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}

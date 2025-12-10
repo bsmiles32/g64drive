@@ -10,5 +10,4 @@ var (
 	ErrInvalidPageRange  = errors.New("invalid page range")
 	ErrInvalidPageSize   = errors.New("invalid page size")
 	ErrOperationNOK      = errors.New("operation NOK")
-	ErrUnsupported       = errors.New("operation is not supported on this Parallel Interface")
 )
