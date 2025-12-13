@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	// Implementors of ParallelInterface may return
+	// Implementors of ParallelInterface or SerialInterface may return
 	// this error if the requested operation is not supported.
 	ErrUnsupported = errors.New("operation is not supported")
 )
@@ -20,4 +20,10 @@ type ParallelInterface interface {
 	Write32(address PiAddress, data uint32) error
 	ReadBurst(address PiAddress, data []byte) error
 	WriteBurst(address PiAddress, data []byte) error
+}
+
+// Serial Interface (SI)
+// This interface decouple and abstract all interactions with SI devices.
+type SerialInterface interface {
+	Operation(tx, rx []byte) error
 }
