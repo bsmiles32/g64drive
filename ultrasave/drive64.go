@@ -30,3 +30,13 @@ func (d Drive64ParallelInterfaceAdapter) WriteBurst(address PiAddress, data []by
 	}
 	return err
 }
+
+// Adapter between SerialInterface and Drive64
+// to allows interaction with a real SI device in cart using 64drive ultrasave.
+type Drive64SerialInterfaceAdapter struct {
+	*drive64.Device
+}
+
+func (d Drive64SerialInterfaceAdapter) Operation(tx, rx []byte) error {
+	return d.CmdStandAloneSiOperation(tx, rx)
+}
