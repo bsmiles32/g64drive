@@ -181,6 +181,10 @@ func (d *Device) Close() error {
 	return d.usb.Close()
 }
 
+func (d *Device) Reset() error {
+	return d.usb.Reset()
+}
+
 // SendCmdNoCmp sends a raw command (without Completion Packet) to 64drive.
 // This is a low-level method, most clients should use one of the Cmd* methods.
 func (d *Device) SendCmdNoCmp(cmd Cmd, args []uint32, in []byte, out []byte) error {
