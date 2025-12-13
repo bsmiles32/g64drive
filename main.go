@@ -139,6 +139,22 @@ func safeSigIntContext(f func(ctx context.Context) error) error {
 	return err
 }
 
+func withStandaloneMode(dev *drive64.Device, f func() error) error {
+	// Check firmware version and verify if it's new enough
+	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
+		if fwver < 203 {
+			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
+		}
+	}
+
+	if err := dev.CmdStandAloneEnter(); err != nil {
+		return err
+	}
+	defer dev.CmdStandAloneLeave()
+
+	return f()
+}
+
 func cmdList(cmd *cobra.Command, args []string) error {
 	devices, unk := drive64.Enumerate()
 
@@ -833,20 +849,10 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 	burstLen := flagPiBurstLen
 	vprintf("burst size: %v\n", burstLen)
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
-		}
-	}
+	return withStandaloneMode(dev, func() error {
+		return downloadPi(dev, bs.NewWriter(f), size, address, burstLen, filepath.Base(args[0]))
 
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
-
-	return downloadPi(dev, bs.NewWriter(f), size, address, burstLen, filepath.Base(args[0]))
+	})
 }
 
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
@@ -856,65 +862,54 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	}
 	defer dev.Close()
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
-		}
-	}
-
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
-
-	address := uint32(0x10000000)
-	pi_dom_cfg, err := dev.CmdStandAlonePiRead32(address)
-	if err != nil {
-		return err
-	}
-	printf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
-
-	// Try to deduce ROM size by probing different addresses with 1MB granularity.
-	// use of 0x4DA5 offset in address is semi random, as it leads to open bus value 0x4DA54DA5
-	// which is not a valid MIPS instruction.
-	// XXX: This logic doesn't handle mirroring.
-	var rom_size sizeUnit
-	last_data := uint32(0x0)
-	var counter = 0
-	for address := uint32(0x10004DA5); address < uint32(0x20000000); address += uint32(0x100000) {
-
-		data, err := dev.CmdStandAlonePiRead32(address)
-		printf("Probed %08x: %08x\n", address, data)
+	return withStandaloneMode(dev, func() error {
+		address := uint32(0x10000000)
+		pi_dom_cfg, err := dev.CmdStandAlonePiRead32(address)
 		if err != nil {
 			return err
 		}
+		printf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
 
-		// Open Bus result: nothing to read in here, we can stop probing that range
-		if data == uint32(0x4DA54DA5) {
-			break
-		}
+		// Try to deduce ROM size by probing different addresses with 1MB granularity.
+		// use of 0x4DA5 offset in address is semi random, as it leads to open bus value 0x4DA54DA5
+		// which is not a valid MIPS instruction.
+		// XXX: This logic doesn't handle mirroring.
+		var rom_size sizeUnit
+		last_data := uint32(0x0)
+		var counter = 0
+		for address := uint32(0x10004DA5); address < uint32(0x20000000); address += uint32(0x100000) {
 
-		// Some (non standard carts don't have the open bus behavior) but returns the same data
-		// like 0xFFFFFFFF. So if we get more than 5 times the same value, assume that we've reached
-		// the end of ROM 5 increments ago.
-		if data == last_data {
-			counter += 1
-			if counter >= 5 {
-				rom_size.size -= int64(5 * 0x100000)
+			data, err := dev.CmdStandAlonePiRead32(address)
+			printf("Probed %08x: %08x\n", address, data)
+			if err != nil {
+				return err
+			}
+
+			// Open Bus result: nothing to read in here, we can stop probing that range
+			if data == uint32(0x4DA54DA5) {
 				break
 			}
-		} else {
-			counter = 0
+
+			// Some (non standard carts don't have the open bus behavior) but returns the same data
+			// like 0xFFFFFFFF. So if we get more than 5 times the same value, assume that we've reached
+			// the end of ROM 5 increments ago.
+			if data == last_data {
+				counter += 1
+				if counter >= 5 {
+					rom_size.size -= int64(5 * 0x100000)
+					break
+				}
+			} else {
+				counter = 0
+			}
+
+			last_data = data
+			rom_size.size += int64(0x100000)
 		}
 
-		last_data = data
-		rom_size.size += int64(0x100000)
-	}
-
-	printf("Guessing a ROM size of %v\n", rom_size)
-	return nil
+		printf("Guessing a ROM size of %v\n", rom_size)
+		return nil
+	})
 }
 
 func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
@@ -924,32 +919,21 @@ func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
 	}
 	defer dev.Close()
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
+	return withStandaloneMode(dev, func() error {
+		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		if err != nil {
+			return err
 		}
-	}
 
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
+		siliconID, err := fla.SiliconID()
+		if err != nil {
+			return err
+		}
 
-	fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
-	if err != nil {
-		return err
-	}
+		printf("Silicon ID: %x - Manufacturer: %s Device: %s\n", siliconID, siliconID.Manufacturer(), siliconID.Device())
 
-	siliconID, err := fla.SiliconID()
-	if err != nil {
-		return err
-	}
-
-	printf("Silicon ID: %x - Manufacturer: %s Device: %s\n", siliconID, siliconID.Manufacturer(), siliconID.Device())
-
-	return nil
+		return nil
+	})
 }
 
 func cmdFlashStatus(cmd *cobra.Command, args []string) error {
@@ -959,42 +943,31 @@ func cmdFlashStatus(cmd *cobra.Command, args []string) error {
 	}
 	defer dev.Close()
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
-		}
-	}
-
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
-
-	fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
-	if err != nil {
-		return err
-	}
-
-	if flagFlashClearStatus {
-		err := fla.ClearStatus()
+	return withStandaloneMode(dev, func() error {
+		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}
 
-		printf("Flash status cleared\n")
+		if flagFlashClearStatus {
+			err := fla.ClearStatus()
+			if err != nil {
+				return err
+			}
 
-	} else {
-		status, err := fla.Status()
-		if err != nil {
-			return err
+			printf("Flash status cleared\n")
+
+		} else {
+			status, err := fla.Status()
+			if err != nil {
+				return err
+			}
+
+			printf("Flash status: %02x\n", status)
 		}
 
-		printf("Flash status: %02x\n", status)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func cmdFlashRead(cmd *cobra.Command, args []string) error {
@@ -1011,91 +984,80 @@ func cmdFlashRead(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
-		}
-	}
-
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
-
-	fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
-	if err != nil {
-		return err
-	}
-
-	flashSize := fla.Layout().ChipSize()
-
-	var bs drive64.ByteSwapper
-	if flagPiByteswapD == 0 || flagPiByteswapD == 2 || flagPiByteswapD == 4 {
-		bs = drive64.ByteSwapper(flagPiByteswapD)
-	} else {
-		return errors.New("invalid byteswap value")
-	}
-	vprintf("byteswap: %v\n", bs)
-
-	offset := int(flagOffset.size)
-	if offset < 0 {
-		return errors.New("invalid offset value (negative number)")
-	}
-	if offset >= flashSize {
-		return errors.New("invalid offset value (too big)")
-	}
-	vprintf("offset: %v\n", offset)
-
-	size := int(flagSize.size)
-	if size < 0 {
-		return errors.New("invalid size value (negative number)")
-	}
-	if size == 0 {
-		size = flashSize - offset
-	}
-
-	if offset+size > flashSize {
-		printf("truncating to flash size")
-		size = flashSize - offset
-	}
-	vprintf("size: %v\n", size)
-	if size == 0 {
-		printf("nothing to write")
-		return nil
-	}
-
-	var pbw io.Writer
-	pbw = os.Stdout
-	if flagQuiet {
-		pbw = ioutil.Discard
-	}
-	pb := progressbar.NewOptions64(int64(size),
-		progressbar.OptionSetDescription(filepath.Base(args[0])),
-		progressbar.OptionSetWriter(pbw))
-	mw := io.MultiWriter(bs.NewWriter(f), pb)
-
-	return safeSigIntContext(func(ctx context.Context) error {
-		defer fmt.Println()
-
-		data, err := func() ([]byte, error) {
-			defer timeTrack(time.Now(), "read")
-			return fla.Read(ctx, offset, size)
-		}()
+	return withStandaloneMode(dev, func() error {
+		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
 		if err != nil {
 			return err
 		}
 
-		// FIXME: do proper progression by passing mw to fla.Read
-		read, err := mw.Write(data[:])
-		if err != nil {
-			return err
-		} else if read != len(data[:]) {
-			panic("provided writer does not respect io.Writer interface")
+		flashSize := fla.Layout().ChipSize()
+
+		var bs drive64.ByteSwapper
+		if flagPiByteswapD == 0 || flagPiByteswapD == 2 || flagPiByteswapD == 4 {
+			bs = drive64.ByteSwapper(flagPiByteswapD)
+		} else {
+			return errors.New("invalid byteswap value")
+		}
+		vprintf("byteswap: %v\n", bs)
+
+		offset := int(flagOffset.size)
+		if offset < 0 {
+			return errors.New("invalid offset value (negative number)")
+		}
+		if offset >= flashSize {
+			return errors.New("invalid offset value (too big)")
+		}
+		vprintf("offset: %v\n", offset)
+
+		size := int(flagSize.size)
+		if size < 0 {
+			return errors.New("invalid size value (negative number)")
+		}
+		if size == 0 {
+			size = flashSize - offset
 		}
 
-		return ctx.Err()
+		if offset+size > flashSize {
+			printf("truncating to flash size")
+			size = flashSize - offset
+		}
+		vprintf("size: %v\n", size)
+		if size == 0 {
+			printf("nothing to write")
+			return nil
+		}
+
+		var pbw io.Writer
+		pbw = os.Stdout
+		if flagQuiet {
+			pbw = ioutil.Discard
+		}
+		pb := progressbar.NewOptions64(int64(size),
+			progressbar.OptionSetDescription(filepath.Base(args[0])),
+			progressbar.OptionSetWriter(pbw))
+		mw := io.MultiWriter(bs.NewWriter(f), pb)
+
+		return safeSigIntContext(func(ctx context.Context) error {
+			defer fmt.Println()
+
+			data, err := func() ([]byte, error) {
+				defer timeTrack(time.Now(), "read")
+				return fla.Read(ctx, offset, size)
+			}()
+			if err != nil {
+				return err
+			}
+
+			// FIXME: do proper progression by passing mw to fla.Read
+			read, err := mw.Write(data[:])
+			if err != nil {
+				return err
+			} else if read != len(data[:]) {
+				panic("provided writer does not respect io.Writer interface")
+			}
+
+			return ctx.Err()
+		})
 	})
 }
 
@@ -1114,82 +1076,71 @@ func cmdFlashWrite(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
-	// Check firmware version and verify if it's new enough
-	if _, fwver, _, err := dev.CmdVersionRequest(); err == nil {
-		if fwver < 203 {
-			return fmt.Errorf("\"g64drive ultrasave\" requires 64drive firmware >= 2.03, found: %v\nDownload a newer firmware from http://64drive.retroactive.be, and then run \"g64drive firmware upgrade\" to upgrade", fwver)
-		}
-	}
-
-	err = dev.CmdStandAloneEnter()
-	if err != nil {
-		return err
-	}
-	defer dev.CmdStandAloneLeave()
-
-	fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
-	if err != nil {
-		return err
-	}
-
-	flashSize := fla.Layout().ChipSize()
-
-	// read at most flashSize data from file
-	data, err := io.ReadAll(io.LimitReader(f, int64(flashSize)))
-
-	var bs drive64.ByteSwapper
-	if flagPiByteswapD == 0 || flagPiByteswapD == 2 || flagPiByteswapD == 4 {
-		bs = drive64.ByteSwapper(flagPiByteswapD)
-	} else {
-		return errors.New("invalid byteswap value")
-	}
-	vprintf("byteswap: %v\n", bs)
-
-	offset := int(flagOffset.size)
-	if offset < 0 {
-		return errors.New("invalid offset value (negative number)")
-	}
-	if offset >= flashSize {
-		return errors.New("invalid offset value (too big)")
-	}
-	vprintf("offset: %v\n", offset)
-
-	size := int(flagSize.size)
-	if size < 0 {
-		return errors.New("invalid size value (negative number)")
-	}
-	if size > len(data) {
-		return errors.New("invalid size value (too big)")
-	}
-
-	if size == 0 {
-		size = flashSize - offset
-	}
-
-	if offset+size > flashSize {
-		printf("truncating to flash size")
-		size = flashSize - offset
-	}
-	vprintf("size: %v\n", size)
-	if size == 0 {
-		printf("nothing to write")
-		return nil
-	}
-	data = data[:size]
-
-	// TODO: show progress bar ?
-	return safeSigIntContext(func(ctx context.Context) error {
-		defer fmt.Println()
-
-		if err := func() error {
-			defer timeTrack(time.Now(), "write")
-			return fla.Write(ctx, offset, data)
-
-		}(); err != nil {
+	return withStandaloneMode(dev, func() error {
+		fla, err := flash.New(flash.Drive64ParallelInterfaceAdapter{dev})
+		if err != nil {
 			return err
 		}
 
-		return ctx.Err()
+		flashSize := fla.Layout().ChipSize()
+
+		// read at most flashSize data from file
+		data, err := io.ReadAll(io.LimitReader(f, int64(flashSize)))
+
+		var bs drive64.ByteSwapper
+		if flagPiByteswapD == 0 || flagPiByteswapD == 2 || flagPiByteswapD == 4 {
+			bs = drive64.ByteSwapper(flagPiByteswapD)
+		} else {
+			return errors.New("invalid byteswap value")
+		}
+		vprintf("byteswap: %v\n", bs)
+
+		offset := int(flagOffset.size)
+		if offset < 0 {
+			return errors.New("invalid offset value (negative number)")
+		}
+		if offset >= flashSize {
+			return errors.New("invalid offset value (too big)")
+		}
+		vprintf("offset: %v\n", offset)
+
+		size := int(flagSize.size)
+		if size < 0 {
+			return errors.New("invalid size value (negative number)")
+		}
+		if size > len(data) {
+			return errors.New("invalid size value (too big)")
+		}
+
+		if size == 0 {
+			size = flashSize - offset
+		}
+
+		if offset+size > flashSize {
+			printf("truncating to flash size")
+			size = flashSize - offset
+		}
+		vprintf("size: %v\n", size)
+		if size == 0 {
+			printf("nothing to write")
+			return nil
+		}
+		data = data[:size]
+
+		// TODO: show progress bar ?
+		return safeSigIntContext(func(ctx context.Context) error {
+			defer fmt.Println()
+
+			if err := func() error {
+				defer timeTrack(time.Now(), "write")
+				return fla.Write(ctx, offset, data)
+
+			}(); err != nil {
+				return err
+			}
+
+			return ctx.Err()
+		})
 	})
 }
 
