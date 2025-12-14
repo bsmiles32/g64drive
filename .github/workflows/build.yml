@@ -43,7 +43,7 @@ jobs:
         env:
           PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib/pkgconfig
       - name: Upload Linux binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         with:
           name: g64drive-linux-amd64
           path: g64drive
@@ -62,7 +62,7 @@ jobs:
           WIN_CERTIFICATE_KEY: ${{ secrets.WIN_CERTIFICATE_KEY }}
           WIN_CERTIFICATE_PUB: ${{ secrets.WIN_CERTIFICATE_PUB }}
       - name: Upload Windows binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         with:
           name: g64drive-windows-amd64
           path: g64drive.exe
@@ -102,7 +102,7 @@ jobs:
           go build -v -ldflags '-s -w'
           zip -9 g64drive-mac-amd64.zip g64drive
       - name: Upload Linux binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v6
         with:
           name: g64drive-mac-amd64
           path: g64drive
