@@ -856,6 +856,48 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// Heuristic procedure to guess ROM size
+func guessRomSize(dev *drive64.Device) (sizeUnit, error) {
+	// Try to deduce ROM size by probing different addresses with 1MB granularity.
+	// use of 0x4DA5 offset in address is semi random, as it leads to open bus value 0x4DA54DA5
+	// which is not a valid MIPS instruction.
+	// XXX: This logic doesn't handle mirroring.
+	var rom_size sizeUnit
+	last_data := uint32(0x0)
+	var counter = 0
+	for address := uint32(0x10004DA5); address < uint32(0x20000000); address += uint32(0x100000) {
+
+		data, err := dev.CmdStandAlonePiRead32(address)
+		vprintf("Probed %08x: %08x\n", address, data)
+		if err != nil {
+			return sizeUnit{}, err
+		}
+
+		// Open Bus result: nothing to read in here, we can stop probing that range
+		if data == uint32(0x4DA54DA5) {
+			break
+		}
+
+		// Some (non standard carts don't have the open bus behavior) but returns the same data
+		// like 0xFFFFFFFF. So if we get more than 5 times the same value, assume that we've reached
+		// the end of ROM 5 increments ago.
+		if data == last_data {
+			counter += 1
+			if counter >= 5 {
+				rom_size.size -= int64(5 * 0x100000)
+				break
+			}
+		} else {
+			counter = 0
+		}
+
+		last_data = data
+		rom_size.size += int64(0x100000)
+	}
+
+	return rom_size, nil
+}
+
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	dev, err := drive64.NewDeviceSingle()
 	if err != nil {
@@ -869,46 +911,14 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		printf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
+		vprintf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
 
-		// Try to deduce ROM size by probing different addresses with 1MB granularity.
-		// use of 0x4DA5 offset in address is semi random, as it leads to open bus value 0x4DA54DA5
-		// which is not a valid MIPS instruction.
-		// XXX: This logic doesn't handle mirroring.
-		var rom_size sizeUnit
-		last_data := uint32(0x0)
-		var counter = 0
-		for address := uint32(0x10004DA5); address < uint32(0x20000000); address += uint32(0x100000) {
-
-			data, err := dev.CmdStandAlonePiRead32(address)
-			printf("Probed %08x: %08x\n", address, data)
-			if err != nil {
-				return err
-			}
-
-			// Open Bus result: nothing to read in here, we can stop probing that range
-			if data == uint32(0x4DA54DA5) {
-				break
-			}
-
-			// Some (non standard carts don't have the open bus behavior) but returns the same data
-			// like 0xFFFFFFFF. So if we get more than 5 times the same value, assume that we've reached
-			// the end of ROM 5 increments ago.
-			if data == last_data {
-				counter += 1
-				if counter >= 5 {
-					rom_size.size -= int64(5 * 0x100000)
-					break
-				}
-			} else {
-				counter = 0
-			}
-
-			last_data = data
-			rom_size.size += int64(0x100000)
+		romSize, err := guessRomSize(dev)
+		if err != nil {
+			return err
 		}
 
-		printf("Guessing a ROM size of %v\n", rom_size)
+		printf("Guessing a ROM size of %v\n", romSize)
 		return nil
 	})
 }
