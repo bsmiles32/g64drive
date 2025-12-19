@@ -1,7 +1,7 @@
 package flash
 
 import (
-	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/pi"
 )
 
 // Address of a programmable 128-byte/64-word block of data.
@@ -98,12 +98,12 @@ func (l Layout) ReadBurstEnd(page Page) Page {
 
 // In read array mode, read address must be adjusted for
 // 16-word addresses chips.
-func (l Layout) ReadAddress(offset int) ultrasave.PiAddress {
-	return ultrasave.PiAddress(offset / l.UnitSize())
+func (l Layout) ReadAddress(offset int) pi.Address {
+	return pi.Address(offset / l.UnitSize())
 }
 
-func (l Layout) PageReadAddress(page Page) ultrasave.PiAddress {
-	return ultrasave.PiAddress(int(page) * l.AddressesPerPage())
+func (l Layout) PageReadAddress(page Page) pi.Address {
+	return pi.Address(int(page) * l.AddressesPerPage())
 }
 
 func (l Layout) validateOffsetSize(offset, size int) error {

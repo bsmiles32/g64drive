@@ -4,19 +4,19 @@
 package flash
 
 import (
-	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/pi"
 )
 
 // Flash are usually mapped at PI address 0x08000000.
-const DefaultBaseAddress = ultrasave.PiAddress(0x08000000)
+const DefaultBaseAddress = pi.Address(0x08000000)
 
 type Flash struct {
-	pi          ultrasave.ParallelInterface
-	baseAddress ultrasave.PiAddress
+	pi          pi.Controller
+	baseAddress pi.Address
 	layout      Layout
 }
 
-func New(pi ultrasave.ParallelInterface, opts ...FlashOption) (*Flash, error) {
+func New(pi pi.Controller, opts ...FlashOption) (*Flash, error) {
 	f := &Flash{
 		pi:          pi,
 		baseAddress: DefaultBaseAddress,

@@ -860,7 +860,7 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 }
 
 func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
-	jdev := joybus.DeviceImpl{SI: ultrasave.Drive64SerialInterfaceAdapter{dev}}
+	jdev := joybus.DeviceImpl{Joybus: ultrasave.Drive64JoybusAdapter{dev}}
 
 	probes := []struct {
 		class   string
@@ -1032,7 +1032,7 @@ func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -1055,7 +1055,7 @@ func cmdFlashStatus(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -1096,7 +1096,7 @@ func cmdFlashRead(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
 		if err != nil {
 			return err
 		}
@@ -1188,7 +1188,7 @@ func cmdFlashWrite(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64ParallelInterfaceAdapter{dev})
+		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
 		if err != nil {
 			return err
 		}

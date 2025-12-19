@@ -1,13 +1,13 @@
 package flash
 
 import (
-	"github.com/rasky/g64drive/ultrasave"
+	"github.com/rasky/g64drive/ultrasave/pi"
 )
 
 type FlashOption func(*Flash) error
 
 // WithBaseAddress allows to override default base address.
-func WithBaseAddress(baseAddress ultrasave.PiAddress) FlashOption {
+func WithBaseAddress(baseAddress pi.Address) FlashOption {
 	return func(f *Flash) error {
 		f.baseAddress = baseAddress
 		return nil

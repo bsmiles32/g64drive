@@ -2,13 +2,19 @@ package joybus
 
 import (
 	"encoding/binary"
-	//"fmt"
-	"github.com/rasky/g64drive/ultrasave"
 )
 
+// Abstact Joybus controller.
+type Controller interface {
+	Execute(cmd Command, tx, rx []byte) error
+}
+
+// Joybus commands are 8 bits.
 type Command uint8
 
 // Joybus common commands.
+// All joybus devices should support these.
+// Commands specific to each device are defined in their respective packages.
 const (
 	cmdInfo  = Command(0x00)
 	cmdReset = Command(0xff)
@@ -23,21 +29,24 @@ type Device interface {
 }
 
 type DeviceImpl struct {
-	SI ultrasave.SerialInterface
+	Joybus Controller
 }
 
+// Ensure *DeviceImpl implements Device interface at compile time.
+var _ Device = (*DeviceImpl)(nil)
+
 func (d *DeviceImpl) Info() (DeviceID, Status, error) {
-	return Info(d.SI, cmdInfo)
+	return Info(d.Joybus, cmdInfo)
 }
 
 func (d *DeviceImpl) Reset() (DeviceID, Status, error) {
-	return Info(d.SI, cmdReset)
+	return Info(d.Joybus, cmdReset)
 }
 
-func Info(si ultrasave.SerialInterface, cmd Command) (DeviceID, Status, error) {
+func Info(joybus Controller, cmd Command) (DeviceID, Status, error) {
 	var info [3]byte
 
-	if err := Operation(si, cmd, nil, info[:]); err != nil {
+	if err := joybus.Execute(cmd, nil, info[:]); err != nil {
 		return 0, 0, err
 	}
 
@@ -45,15 +54,4 @@ func Info(si ultrasave.SerialInterface, cmd Command) (DeviceID, Status, error) {
 	status := Status(info[2])
 
 	return id, status, nil
-}
-
-func Operation(si ultrasave.SerialInterface, cmd Command, tx, rx []byte) error {
-	err := si.Operation(append([]byte{byte(cmd)}, tx...), rx)
-	if err != nil {
-		//fmt.Printf("SI operation: cmd=%02x tx=%v error=%v\n", cmd, tx, err)
-		return err
-	}
-
-	//fmt.Printf("SI operation: cmd=%02x tx=%v rx=%v\n", cmd, tx, rx)
-	return nil
 }
