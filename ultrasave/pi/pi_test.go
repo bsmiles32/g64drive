@@ -124,7 +124,7 @@ func TestRead(t *testing.T) {
 		t.Run(fmt.Sprintf("address=%08x size=%08x pageBits=%d", tc.address, tc.size, tc.pageBits), func(t *testing.T) {
 			reads := make([]ReadBurstInfo, 0)
 			got := make([]byte, tc.size)
-			err := Read(context.Background(), got, tc.address, tc.pageBits, func(address Address, data []byte) error {
+			err := Read(context.Background(), got, tc.address, tc.pageBits, func(data []byte, address Address) error {
 				reads = append(reads, ReadBurstInfo{address, len(data)})
 				for k := 0; k < len(data); k++ {
 					data[k] = byte(address + Address(k))

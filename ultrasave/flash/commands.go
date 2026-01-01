@@ -25,7 +25,7 @@ const (
 func (f *Flash) writeCIR(cmd Command) error {
 	// CIR is located a flash address 0x00010000.
 	const cirOffset = pi.Address(0x00010000)
-	return f.pi.Write32(f.baseAddress+cirOffset, uint32(cmd))
+	return f.pi.WriteWordAt(uint32(cmd), f.baseAddress+cirOffset)
 }
 
 func (cmd Command) String() string {

@@ -41,7 +41,7 @@ func (f *Flash) ReadPages(ctx context.Context, begin, end Page) ([]byte, error) 
 
 		count := int(burstEnd - begin)
 
-		if err := f.pi.ReadBurst(f.baseAddress+f.layout.PageReadAddress(begin), data[idx:idx+count*pageSize]); err != nil {
+		if err := f.pi.ReadBurstAt(data[idx:idx+count*pageSize], f.baseAddress+f.layout.PageReadAddress(begin)); err != nil {
 			return nil, err
 		}
 

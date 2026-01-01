@@ -65,7 +65,7 @@ func (f *Flash) ClearStatus() error {
 // read status assuming status mode is already effective
 func (f *Flash) status() (Status, error) {
 	// Flash address is ignored (so use 0)
-	u32, err := f.pi.Read32(f.baseAddress)
+	u32, err := f.pi.ReadWordAt(f.baseAddress)
 	if err != nil {
 		return 0, err
 	}
@@ -78,7 +78,7 @@ func (f *Flash) status() (Status, error) {
 func (f *Flash) clearStatus() error {
 	// On MN63F8MPN address and value are ignored
 	// TOVERIFY: is that the case for MX29L1100 ?
-	return f.pi.Write32(f.baseAddress, 0)
+	return f.pi.WriteWordAt(0, f.baseAddress)
 }
 
 // poll status until mask bits are cleared assuming status mode is already effective

@@ -21,6 +21,7 @@ var (
 	ErrUnsupported     = errors.New("operation is not supported on this 64drive revision")
 	ErrInvalidFifoHead = errors.New("invalid FIFO header")
 	ErrUnknownDevice   = errors.New("found compatible USB device which cannot be accessed")
+	ErrUnalignedAccess = errors.New("unaligned access")
 )
 
 func init() {
@@ -498,7 +499,7 @@ func (d *Device) CmdStandAlonePiReadBurst(address uint32, data []byte) error {
 	// 64drive seems to only supports burst of length multiple of 32bits.
 	burstLength := len(data)
 	if burstLength%4 != 0 {
-		return ErrUnsupported
+		return ErrUnalignedAccess
 	}
 
 	var cmdargs [2]uint32
@@ -525,7 +526,7 @@ func (d *Device) CmdStandAlonePiWriteBurst(address uint32, data []byte) error {
 	// 64drive seems to only supports burst of length multiple of 32bits.
 	burstLength := len(data)
 	if burstLength%4 != 0 {
-		return ErrUnsupported
+		return ErrUnalignedAccess
 	}
 
 	var cmdargs [2]uint32

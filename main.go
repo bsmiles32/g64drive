@@ -860,7 +860,12 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 }
 
 func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
-	jdev := joybus.DeviceImpl{Joybus: ultrasave.Drive64JoybusAdapter{dev}}
+	c, ok := ultrasave.New64DriveAdapters(dev).(joybus.Controller)
+	if !ok {
+		return nil, fmt.Errorf("device doesn't support joybus controller interface")
+	}
+
+	jdev := joybus.DeviceImpl{Joybus: c}
 
 	probes := []struct {
 		class   string
@@ -1032,7 +1037,12 @@ func cmdFlashSiliconId(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
+		c, ok := ultrasave.New64DriveAdapters(dev).(flash.Controller)
+		if !ok {
+			return fmt.Errorf("device doesn't support flash controller interface")
+		}
+
+		fla, err := flash.New(c)
 		if err != nil {
 			return err
 		}
@@ -1055,7 +1065,12 @@ func cmdFlashStatus(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
+		c, ok := ultrasave.New64DriveAdapters(dev).(flash.Controller)
+		if !ok {
+			return fmt.Errorf("device doesn't support flash controller interface")
+		}
+
+		fla, err := flash.New(c)
 		if err != nil {
 			return err
 		}
@@ -1096,7 +1111,12 @@ func cmdFlashRead(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
+		c, ok := ultrasave.New64DriveAdapters(dev).(flash.Controller)
+		if !ok {
+			return fmt.Errorf("device doesn't support flash controller interface")
+		}
+
+		fla, err := flash.New(c)
 		if err != nil {
 			return err
 		}
@@ -1188,7 +1208,12 @@ func cmdFlashWrite(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	return withStandaloneMode(dev, func() error {
-		fla, err := flash.New(ultrasave.Drive64PIAdapter{dev})
+		c, ok := ultrasave.New64DriveAdapters(dev).(flash.Controller)
+		if !ok {
+			return fmt.Errorf("device doesn't support flash controller interface")
+		}
+
+		fla, err := flash.New(c)
 		if err != nil {
 			return err
 		}

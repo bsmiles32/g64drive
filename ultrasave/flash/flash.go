@@ -10,13 +10,22 @@ import (
 // Flash are usually mapped at PI address 0x08000000.
 const DefaultBaseAddress = pi.Address(0x08000000)
 
+// This flash package requires these interfaces.
+// If underlying type also support pi.BurstWriterAt it will be used
+// preferentially when loading content of internal page buffer.
+type Controller interface {
+	pi.WordReaderAt
+	pi.WordWriterAt
+	pi.BurstReaderAt
+}
+
 type Flash struct {
-	pi          pi.Controller
+	pi          Controller
 	baseAddress pi.Address
 	layout      Layout
 }
 
-func New(pi pi.Controller, opts ...FlashOption) (*Flash, error) {
+func New(pi Controller, opts ...FlashOption) (*Flash, error) {
 	f := &Flash{
 		pi:          pi,
 		baseAddress: DefaultBaseAddress,

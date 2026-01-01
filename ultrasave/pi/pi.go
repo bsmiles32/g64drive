@@ -2,26 +2,69 @@ package pi
 
 import (
 	"context"
-	"errors"
-)
-
-var (
-	// Implementors of ParallelInterface may return
-	// this error if the requested operation is not supported.
-	ErrUnsupported = errors.New("operation is not supported")
-	ErrUnalignedBurst = errors.New("unaligned burst")
+	"encoding/binary"
 )
 
 // Parallel Interface (PI) has a 32bit address space.
 type Address uint32
 
-// Abstract PI Controller.
-type Controller interface {
-	Read32(address Address) (uint32, error)
-	Write32(address Address, data uint32) error
-	ReadBurst(address Address, data []byte) error
-	WriteBurst(address Address, data []byte) error
+// Interface that wrap the ReadWordAt method.
+type WordReaderAt interface {
+	// Perform a 32bit word IO read on PI bus
+	// address should be a multiple of 4.
+	ReadWordAt(address Address) (uint32, error)
 }
+
+// Interface that wrap the WriteWordAt method.
+type WordWriterAt interface {
+	// Perform a 32bit word IO write on PI bus
+	// address should be a multiple of 4.
+	WriteWordAt(word uint32, address Address) error
+}
+
+// Interface that wrap the ReadBurstAt method.
+type BurstReaderAt interface {
+	// Perform a burst read on PI bus
+	// Both address and len(data) should be a multiple of 4.
+	ReadBurstAt(data []byte, address Address) error
+}
+
+// Interface that wrap the WriteBurstAt method.
+type BurstWriterAt interface {
+	// Perform a burst write on PI bus
+	// Both address and len(data) should be a multiple of 4.
+	WriteBurstAt(data []byte, address Address) error
+}
+
+// Helper function which will try to do a burst write if supported,
+// and fallback to IO write otherwise.
+// This is helpful to workaround a bug in 64drive FW <2.04.
+// Both address and len(data) should be a multiple of 4.
+func WriteAt(w WordWriterAt, data []byte, address Address) (int, error) {
+	// If w support burst write use that
+	if burstWriter, ok := w.(BurstWriterAt); ok {
+		if err := burstWriter.WriteBurstAt(data, address); err != nil {
+			return 0, err
+		}
+		return len(data), nil
+	}
+
+	// IO fallback
+	for i := 0; i < len(data); i += 4 {
+		u32 := binary.BigEndian.Uint32(data[i : i+4])
+		if err := w.WriteWordAt(u32, address + Address(i)); err != nil {
+			return i, err
+		}
+	}
+
+	return len(data), nil
+}
+
+
+
+
+
+
 
 func alignDown(address Address, bits int) Address {
 	mask := Address((1 << bits) - 1)
@@ -33,15 +76,15 @@ func alignUp(address Address, bits int) Address {
 	return (address | mask) + 1
 }
 
-type BurstFn func(Address, []byte) error
+type BurstFn func([]byte, Address) error
 
 // Splits a DMA Read operation into suitable bursts such that:
-// * all burst have a size which is a multiple of 4 (to accomodate ultrasave constrains)
+// * all burst have a size which is a multiple of 4 (to accommodate ultrasave constrains)
 // * all burst are 4-byte aligned, this is a bit conservative as PI only need 2-byte alignment (for specified behavior) but this eases the implementation.
 // * no burst will cross device page boundary (eg. 2^pageBits)
 // * only the minimal number of burst shall be emitted (eg. we always try to read up to the next limit)
 // * transparently handle unaligned transfers
-func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurst BurstFn) error {
+func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurstAt BurstFn) error {
 	// Early return for empty reads
 	if len(p) == 0 {
 		return nil
@@ -64,7 +107,7 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 	}
 
 	burstSize := int(burstEnd - begin)
-	if err := readBurst(begin, page[:burstSize]); err != nil {
+	if err := readBurstAt(page[:burstSize], begin); err != nil {
 		return err
 	}
 
@@ -88,7 +131,7 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 		// burstEnd < end by construction, no need to further limit burstEnd
 		burstEnd := alignUp(begin, pageBits)
 		burstSize := int(burstEnd - begin)
-		if err := readBurst(begin, p[idx:idx+burstSize]); err != nil {
+		if err := readBurstAt(p[idx:idx+burstSize], begin); err != nil {
 			return err
 		}
 
@@ -99,10 +142,22 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 	// Last transfer may need to over-read and copy back only required bytes.
 	skip = int(end - (address + Address(len(p))))
 	burstSize = int(end - begin)
-	if err := readBurst(begin, page[:burstSize]); err != nil {
+	if err := readBurstAt(page[:burstSize], begin); err != nil {
 		return err
 	}
 	copy(p[idx:], page[:burstSize-skip])
 
 	return nil
 }
+
+/*
+type PagedDevice struct {
+	ctx context.Context
+	pageBits int
+	readBurstAt BurstFn
+	writeBurst BurstFn
+}
+
+func (r *PageReader) ReadAt(ctx context.Context, p []byte, address int64) (nread int, err error) {
+}
+*/

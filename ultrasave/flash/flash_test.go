@@ -51,7 +51,7 @@ func setup(t *testing.T, opts ...FlashOption) *Flash {
 
 	dev, err := drive64.NewDeviceSingle()
 	if err != nil {
-		t.Fatal(err)
+		t.Skip(err)
 	}
 	t.Cleanup(func() {
 		dev.Close()
@@ -73,7 +73,12 @@ func setup(t *testing.T, opts ...FlashOption) *Flash {
 		dev.CmdStandAloneLeave()
 	})
 
-	fla, err := New(ultrasave.Drive64PIAdapter{dev}, opts...)
+	c, ok := ultrasave.New64DriveAdapters(dev).(Controller)
+	if !ok {
+		t.Skip("adapter doesn't support Controller interface")
+	}
+
+	fla, err := New(c, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,14 +101,14 @@ func (f *Flash) mustWriteCIR(t *testing.T, cmd Command) {
 
 func (f *Flash) mustWriteIO(t *testing.T, offset pi.Address, data uint32) {
 	t.Helper()
-	if err := f.pi.Write32(f.baseAddress+offset, data); err != nil {
+	if err := f.pi.WriteWordAt(data, f.baseAddress+offset); err != nil {
 		t.Fatalf("unable to perform PI IO write [offset = %05x]: %v", offset, err)
 	}
 }
 
 func (f *Flash) mustReadIO(t *testing.T, offset pi.Address) uint32 {
 	t.Helper()
-	u32, err := f.pi.Read32(f.baseAddress + offset)
+	u32, err := f.pi.ReadWordAt(f.baseAddress + offset)
 	if err != nil {
 		t.Fatalf("unable to perform PI IO read [offset = %05x]: %v", offset, err)
 	}
@@ -113,7 +118,7 @@ func (f *Flash) mustReadIO(t *testing.T, offset pi.Address) uint32 {
 func (f *Flash) mustReadBurst(t *testing.T, offset pi.Address, size int) []byte {
 	t.Helper()
 	data := make([]byte, size)
-	if err := f.pi.ReadBurst(f.baseAddress+offset, data); err != nil {
+	if err := f.pi.ReadBurstAt(data, f.baseAddress+offset); err != nil {
 		t.Fatalf("unable to perform PI read burst [offset = %05x, size = %05x]: %v", offset, size, err)
 	}
 	return data

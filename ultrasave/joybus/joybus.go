@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 )
 
-// Abstact Joybus controller.
+// Abstact Joybus interface
 type Controller interface {
 	Execute(cmd Command, tx, rx []byte) error
 }

@@ -80,7 +80,7 @@ func (f *Flash) SiliconID() (*SiliconID, error) {
 	// Flash address is ignored (so use 0)
 	// To read the full silicon ID a burst of 8 byte is needed (can't be done using IO).
 	var data [8]byte
-	if err := f.pi.ReadBurst(f.baseAddress, data[:]); err != nil {
+	if err := f.pi.ReadBurstAt(data[:], f.baseAddress); err != nil {
 		return nil, err
 	}
 
