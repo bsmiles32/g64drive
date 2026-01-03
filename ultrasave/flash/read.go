@@ -12,7 +12,7 @@ import (
  * This is motivated by the following reasons
  * * Program and Erase operations works with pages
  * * Read burst may not cross the ReadBurst boundary
- * * PI alignment constrains may prevent some other admissible flash reads.
+ * * PI alignment constrains may prevent some otherwise admissible flash reads.
  */
 
 // Reads whole consecutive pages [begin, end[
