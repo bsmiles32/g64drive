@@ -911,11 +911,11 @@ func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
 		vprintf("Probing for %s Joybus devices\n", p.class)
 		devID, _, err := p.info()
 
-		switch err {
-		case nil:
-		// We didn't get any response from joybus device, unfreeze the 64drive/SI device
-		// and try next probing method
-		case drive64.ErrFrozen:
+
+		if err == nil {
+			// We didn't get any response from joybus device, unfreeze the 64drive/SI device
+			// and try next probing method
+		} else if errors.Is(err, drive64.ErrFrozen) {
 			// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
 			// so SI device can accept further commands (after having received an unknown command).
 			// I don't have a good understanding of why this work and why this is needed,
@@ -923,7 +923,7 @@ func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
 			time.Sleep(2700 * time.Millisecond)
 			dev.Reset()
 			continue
-		default:
+		} else {
 			return nil, err
 		}
 
