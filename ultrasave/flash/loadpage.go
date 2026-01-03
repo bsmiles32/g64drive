@@ -18,6 +18,6 @@ func (f *Flash) LoadBytePage(data []byte) error {
 
 	// Use WriteAt which will fallback to IO code path if burst is not supported
 	// (workaround bug in 64drive FW < 2.04)
-	_, err := pi.WriteAt(f.pi, data, f.baseAddress)
+	_, err := pi.WriteBurstWithIOFallbackAt(f.pi, data, f.baseAddress)
 	return err
 }

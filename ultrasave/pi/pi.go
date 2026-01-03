@@ -11,36 +11,39 @@ type Address uint32
 // Interface that wrap the ReadWordAt method.
 type WordReaderAt interface {
 	// Perform a 32bit word IO read on PI bus
-	// address should be a multiple of 4.
+	// Note that address LSB is usually ignored by PI devices.
 	ReadWordAt(address Address) (uint32, error)
 }
 
 // Interface that wrap the WriteWordAt method.
 type WordWriterAt interface {
 	// Perform a 32bit word IO write on PI bus
-	// address should be a multiple of 4.
+	// Note that address LSB is usually ignored by PI devices.
 	WriteWordAt(word uint32, address Address) error
 }
 
 // Interface that wrap the ReadBurstAt method.
 type BurstReaderAt interface {
 	// Perform a burst read on PI bus
-	// Both address and len(data) should be a multiple of 4.
+	// len(data) should be a multiple of 4.
+	// Note that address LSB is usually ignored by PI devices.
 	ReadBurstAt(data []byte, address Address) error
 }
 
 // Interface that wrap the WriteBurstAt method.
 type BurstWriterAt interface {
 	// Perform a burst write on PI bus
-	// Both address and len(data) should be a multiple of 4.
+	// len(data) should be a multiple of 4.
+	// Note that address LSB is usually ignored by PI devices.
 	WriteBurstAt(data []byte, address Address) error
 }
 
 // Helper function which will try to do a burst write if supported,
 // and fallback to IO write otherwise.
 // This is helpful to workaround a bug in 64drive FW <2.04.
-// Both address and len(data) should be a multiple of 4.
-func WriteAt(w WordWriterAt, data []byte, address Address) (int, error) {
+// len(data) must be a multiple of 4.
+// Note that address LSB is usually ignored by PI devices.
+func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (int, error) {
 	// If w support burst write use that
 	if burstWriter, ok := w.(BurstWriterAt); ok {
 		if err := burstWriter.WriteBurstAt(data, address); err != nil {
@@ -149,15 +152,3 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 
 	return nil
 }
-
-/*
-type PagedDevice struct {
-	ctx context.Context
-	pageBits int
-	readBurstAt BurstFn
-	writeBurst BurstFn
-}
-
-func (r *PageReader) ReadAt(ctx context.Context, p []byte, address int64) (nread int, err error) {
-}
-*/
