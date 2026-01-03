@@ -1,7 +1,6 @@
 package flash
 
 import (
-	//"encoding/binary"
 	"github.com/rasky/g64drive/ultrasave/pi"
 )
 
