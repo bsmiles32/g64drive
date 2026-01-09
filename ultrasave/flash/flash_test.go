@@ -852,7 +852,7 @@ func TestReads(t *testing.T) {
 
 			var expected []byte
 			switch SiliconID.Device() {
-			case "MN63F8MPN":
+			case "MN63F8MPN", "MX29L1101_A":
 				expected = repeatLastbytesOfPattern([]byte{0xab, 0xcd}, 2, 0x20)
 			case "MX29L1100":
 				// XXX: MX29L1100 has has a different behavior, which looks like some kind of wrap around
@@ -870,10 +870,10 @@ func TestReads(t *testing.T) {
 				t.Logf("data @0x20004:\n%s", hexDump(f.mustReadBurst(t, f.layout.ReadAddress(0x20004), 0x20)))
 				t.Logf("data @0x20008:\n%s", hexDump(f.mustReadBurst(t, f.layout.ReadAddress(0x20008), 0x20)))
 
-				t.Skipf("behavior not yet poperly understood")
+				t.Skipf("behavior not yet properly understood")
 				//expected = repeatLastbytesOfPattern([]byte{0xff}, 1, 0x20)
 			default:
-				t.Skipf("behavior not yet poperly understood")
+				t.Skipf("behavior not yet properly understood")
 			}
 			if got := data; !bytes.Equal(expected, got) {
 				t.Errorf("unexpected values expected %02x != got %02x", expected, got)
@@ -887,7 +887,7 @@ func TestReads(t *testing.T) {
 			t.Logf("data @0x2abcd:\n%08x", data)
 			var expected uint32
 			switch SiliconID.Device() {
-			case "MN63F8MPN":
+			case "MN63F8MPN", "MX29L1101_A":
 				expected = loExtend(0xabcd)
 			default:
 				expected = 0xffffffff
