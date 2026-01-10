@@ -25,6 +25,7 @@ import (
 	"github.com/rasky/g64drive/ultrasave/eeprom"
 	"github.com/rasky/g64drive/ultrasave/flash"
 	"github.com/rasky/g64drive/ultrasave/joybus"
+	"github.com/rasky/g64drive/ultrasave/rom"
 	"github.com/rasky/g64drive/ultrasave/rtc"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
@@ -947,46 +948,18 @@ func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
 	return nil, nil
 }
 
-// Heuristic procedure to guess ROM size
-func guessRomSize(dev *drive64.Device) (sizeUnit, error) {
-	// Try to deduce ROM size by probing different addresses with 1MB granularity.
-	// use of 0x4DA5 offset in address is semi random, as it leads to open bus value 0x4DA54DA5
-	// which is not a valid MIPS instruction.
-	// XXX: This logic doesn't handle mirroring.
-	var rom_size sizeUnit
-	last_data := uint32(0x0)
-	var counter = 0
-	for address := uint32(0x10004DA5); address < uint32(0x20000000); address += uint32(0x100000) {
-
-		data, err := dev.CmdStandAlonePiRead32(address)
-		vprintf("Probed %08x: %08x\n", address, data)
-		if err != nil {
-			return sizeUnit{}, err
-		}
-
-		// Open Bus result: nothing to read in here, we can stop probing that range
-		if data == uint32(0x4DA54DA5) {
-			break
-		}
-
-		// Some (non standard carts don't have the open bus behavior) but returns the same data
-		// like 0xFFFFFFFF. So if we get more than 5 times the same value, assume that we've reached
-		// the end of ROM 5 increments ago.
-		if data == last_data {
-			counter += 1
-			if counter >= 5 {
-				rom_size.size -= int64(5 * 0x100000)
-				break
-			}
-		} else {
-			counter = 0
-		}
-
-		last_data = data
-		rom_size.size += int64(0x100000)
+func cartRomProbe(dev *drive64.Device) (*rom.Rom, error) {
+	c, ok := ultrasave.New64DriveAdapters(dev).(rom.Controller)
+	if !ok {
+		return nil, fmt.Errorf("device doesn't support rom controller interface")
+	}
+	cartRom, err := rom.New(c)
+	if err != nil {
+		return nil, err
 	}
 
-	return rom_size, nil
+	printf("Guessing a ROM size of %d MiB\n", cartRom.Size() / (1024*1024))
+	return cartRom, nil
 }
 
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
@@ -1001,23 +974,14 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 		// Probe Joybus devices
 		_, err := joybusProbe(dev)
 		if err != nil {
-			printf("Error while probing joybus: %v\n", err)
+			printf("Error while probing joybus: %w\n", err)
 		}
 
 		// Probe cart ROM
-		address := uint32(0x10000000)
-		pi_dom_cfg, err := dev.CmdStandAlonePiRead32(address)
+		_, err = cartRomProbe(dev)
 		if err != nil {
-			return err
+			printf("Error while probing cart ROM: %w\n", err)
 		}
-		vprintf("Probing cart ROM @ %08x: %08x\n", address, pi_dom_cfg)
-
-		romSize, err := guessRomSize(dev)
-		if err != nil {
-			return err
-		}
-
-		printf("Guessing a ROM size of %v\n", romSize)
 
 		// TODO: Add heuristic to guess if some PI device is in Dom2 (Flash / SRAM)
 
