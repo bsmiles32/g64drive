@@ -3,6 +3,7 @@ package pi
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 )
 
 // Parallel Interface (PI) has a 32bit address space.
@@ -38,12 +39,23 @@ type BurstWriterAt interface {
 	WriteBurstAt(data []byte, address Address) error
 }
 
-// Helper function which will try to do a burst write if supported,
-// and fallback to IO write otherwise.
+
+
+
+// Helper function which will try to do a single burst write if supported,
+// and fallback to many IO writes otherwise.
 // This is helpful to workaround a bug in 64drive FW <2.04.
 // len(data) must be a multiple of 4.
 // Note that address LSB is usually ignored by PI devices.
 func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (int, error) {
+	// Check interfaces precondition
+	if len(data) % 4 != 0 {
+		return 0, fmt.Errorf("burst size is not a multiple of 4 (%d)", len(data))
+	}
+
+	// We don't check address % 4 because it's not mandatory:
+	// IO and Burst should behave the same.
+
 	// If w support burst write use that
 	if burstWriter, ok := w.(BurstWriterAt); ok {
 		if err := burstWriter.WriteBurstAt(data, address); err != nil {
@@ -63,10 +75,66 @@ func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (i
 	return len(data), nil
 }
 
+// Adapter
+type BurstReaderAtFunc func([]byte, Address) error
+func (b BurstReaderAtFunc) ReadBurstAt(data []byte, address Address) error {
+	return b(data, address)
+}
+
+type BurstWriterAtFunc func([]byte, Address) error
+func (b BurstWriterAtFunc) WriteBurstAt(data []byte, address Address) error {
+	return b(data, address)
+}
 
 
 
 
+type BurstAtFunc func([]byte, Address) error
+
+// Split transfer into bursts that don't cross page boundary.
+// len(data) must be a multiple of 4.
+// address must be a multiple of 4.
+// pageBits must be greater or equal to 2.
+func SplitBursts(ctx context.Context, data []byte, address Address, pageBits int, burstAt BurstAtFunc) (int, error) {
+	// Check preconditions
+	if len(data) % 4 != 0 {
+		return 0, fmt.Errorf("burst size is not a multiple of 4 (%d)", len(data))
+	}
+
+	if address % 4 != 0 {
+		return 0, fmt.Errorf("address is not a multiple of 4 (%08x)", address)
+	}
+
+	if pageBits < 2 {
+		return 0, fmt.Errorf("pageBits must be greater or equal to 2 (%d)", pageBits)
+	}
+
+	begin := address
+	end := address + Address(len(data))
+	idx := 0
+
+	for begin < end {
+		if err := ctx.Err(); err != nil {
+			return idx, err
+		}
+
+		burstEnd := alignUp(begin, pageBits)
+		if burstEnd > end {
+			burstEnd = end
+		}
+
+		burstSize := int(burstEnd - begin)
+
+		if err := burstAt(data[idx:idx+burstSize], begin); err != nil {
+			return idx, err
+		}
+
+		begin += Address(burstSize)
+		idx += burstSize
+	}
+
+	return idx, nil
+}
 
 
 func alignDown(address Address, bits int) Address {
@@ -79,15 +147,13 @@ func alignUp(address Address, bits int) Address {
 	return (address | mask) + 1
 }
 
-type BurstFn func([]byte, Address) error
-
 // Splits a DMA Read operation into suitable bursts such that:
 // * all burst have a size which is a multiple of 4 (to accommodate ultrasave constrains)
 // * all burst are 4-byte aligned, this is a bit conservative as PI only need 2-byte alignment (for specified behavior) but this eases the implementation.
 // * no burst will cross device page boundary (eg. 2^pageBits)
 // * only the minimal number of burst shall be emitted (eg. we always try to read up to the next limit)
 // * transparently handle unaligned transfers
-func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurstAt BurstFn) error {
+func Read(ctx context.Context, p []byte, address Address, pageBits int, r BurstReaderAt) error {
 	// Early return for empty reads
 	if len(p) == 0 {
 		return nil
@@ -110,7 +176,7 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 	}
 
 	burstSize := int(burstEnd - begin)
-	if err := readBurstAt(page[:burstSize], begin); err != nil {
+	if err := r.ReadBurstAt(page[:burstSize], begin); err != nil {
 		return err
 	}
 
@@ -134,7 +200,7 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 		// burstEnd < end by construction, no need to further limit burstEnd
 		burstEnd := alignUp(begin, pageBits)
 		burstSize := int(burstEnd - begin)
-		if err := readBurstAt(p[idx:idx+burstSize], begin); err != nil {
+		if err := r.ReadBurstAt(p[idx:idx+burstSize], begin); err != nil {
 			return err
 		}
 
@@ -145,7 +211,7 @@ func Read(ctx context.Context, p []byte, address Address, pageBits int, readBurs
 	// Last transfer may need to over-read and copy back only required bytes.
 	skip = int(end - (address + Address(len(p))))
 	burstSize = int(end - begin)
-	if err := readBurstAt(page[:burstSize], begin); err != nil {
+	if err := r.ReadBurstAt(page[:burstSize], begin); err != nil {
 		return err
 	}
 	copy(p[idx:], page[:burstSize-skip])

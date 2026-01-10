@@ -51,7 +51,7 @@ func hexDump(data []byte) string {
 	return b.String()
 }
 
-func TestRead(t *testing.T) {
+func TestPiRead(t *testing.T) {
 
 	type ReadBurstInfo struct {
 		address Address
@@ -124,14 +124,14 @@ func TestRead(t *testing.T) {
 		t.Run(fmt.Sprintf("address=%08x size=%08x pageBits=%d", tc.address, tc.size, tc.pageBits), func(t *testing.T) {
 			reads := make([]ReadBurstInfo, 0)
 			got := make([]byte, tc.size)
-			err := Read(context.Background(), got, tc.address, tc.pageBits, func(data []byte, address Address) error {
+			err := Read(context.Background(), got, tc.address, tc.pageBits, BurstReaderAtFunc(func(data []byte, address Address) error {
 				reads = append(reads, ReadBurstInfo{address, len(data)})
 				for k := 0; k < len(data); k++ {
 					data[k] = byte(address + Address(k))
 				}
 
 				return nil
-			})
+			}))
 
 			if err != nil {
 				t.Fatal(err)
@@ -161,6 +161,92 @@ func TestRead(t *testing.T) {
 
 			if t.Failed() {
 				t.Log(hexDump(got))
+			}
+		})
+	}
+}
+
+func TestSplitBurst(t *testing.T) {
+
+	type BurstInfo struct {
+		address Address
+		size    int
+	}
+
+	testCases := []struct {
+		address        Address
+		size           int
+		pageBits       int
+		expectedBursts []BurstInfo
+	}{
+		{address: 0, size: 0, pageBits: 9, expectedBursts: []BurstInfo{}},
+		{address: 0, size: 4, pageBits: 9, expectedBursts: []BurstInfo{
+			{address: 0, size: 4},
+		},
+		},
+		{address: 4, size: 8, pageBits: 9, expectedBursts: []BurstInfo{
+			{address: 4, size: 8},
+		},
+		},
+		{address: 0, size: 0x00100000, pageBits: 20, expectedBursts: []BurstInfo{
+			{address: 0, size: 0x00100000},
+		},
+		},
+		{address: 0, size: 2048, pageBits: 9, expectedBursts: []BurstInfo{
+			{address: 0, size: 512},
+			{address: 512, size: 512},
+			{address: 1024, size: 512},
+			{address: 1536, size: 512},
+		},
+		},
+		{address: 4, size: 524, pageBits: 9, expectedBursts: []BurstInfo{
+			{address: 4, size: 508},
+			{address: 512, size: 16},
+		},
+		},
+		{address: 508, size: 16, pageBits: 9, expectedBursts: []BurstInfo{
+			{address: 508, size: 4},
+			{address: 512, size: 12},
+		},
+		},
+		{address: 0x08007ffc, size: 16, pageBits: 15, expectedBursts: []BurstInfo{
+			{address: 0x08007ffc, size: 4},
+			{address: 0x08008000, size: 12},
+		},
+		},
+		{address: 0x08000000, size: 0x00020000, pageBits: 15, expectedBursts: []BurstInfo{
+			{address: 0x08000000, size: 0x8000},
+			{address: 0x08008000, size: 0x8000},
+			{address: 0x08010000, size: 0x8000},
+			{address: 0x08018000, size: 0x8000},
+		},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("address=%08x size=%08x pageBits=%d", tc.address, tc.size, tc.pageBits), func(t *testing.T) {
+			bursts := make([]BurstInfo, 0)
+			got := make([]byte, tc.size)
+			n, err := SplitBursts(context.Background(), got, tc.address, tc.pageBits, func(data []byte, address Address) error {
+				bursts = append(bursts, BurstInfo{address, len(data)})
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if n != len(got) {
+				t.Errorf("unexpected n: %d != %d", len(got), n)
+			}
+
+			if len(tc.expectedBursts) != len(bursts) {
+				t.Errorf("unexpected bursts: %+v != %+v", tc.expectedBursts, bursts)
+			} else {
+				for i := 0; i < len(bursts); i++ {
+					if expected, got := tc.expectedBursts[i], bursts[i]; expected != got {
+						t.Errorf("unexpected bursts (%d): %+v != %+v", i, expected, got)
+					}
+				}
 			}
 		})
 	}
