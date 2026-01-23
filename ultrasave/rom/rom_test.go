@@ -42,7 +42,6 @@ func setup(t *testing.T, opts ...RomOption) *Rom {
 		t.Skip("unable to get 64drive adapter")
 	}
 
-
 	t.Logf("udev type: %T", udev)
 
 	c, ok := udev.(Controller)
@@ -136,7 +135,6 @@ func TestAdmissibleBursts(t *testing.T) {
 	t.Logf("0x21: %08x", r.mustReadIO(t, 0x21))
 	t.Logf("0x22: %08x", r.mustReadIO(t, 0x22))
 	t.Logf("0x23: %08x", r.mustReadIO(t, 0x23))
-
 
 	t.Log("0, 4", hexDump(r.mustReadBurst(t, 0, 4)))
 	t.Log("1, 4", hexDump(r.mustReadBurst(t, 1, 4)))

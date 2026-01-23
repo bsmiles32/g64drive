@@ -3,7 +3,14 @@ package pi
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math/rand"
+	"sort"
+)
+
+var (
+	ErrSizeProbeFailure = errors.New("unable to probe device size")
 )
 
 // Parallel Interface (PI) has a 32bit address space.
@@ -39,8 +46,93 @@ type BurstWriterAt interface {
 	WriteBurstAt(data []byte, address Address) error
 }
 
+func strByteSize(size int) string {
+	units := []string{"MiB", "KiB", "B"}
 
+	multiplier := int(1024 * 1024)
+	for _, u := range units {
+		if size >= multiplier {
+			if size%multiplier == 0 {
+				return fmt.Sprintf("%d %s", size/multiplier, u)
+			} else {
+				return fmt.Sprintf("%.1f %s", float64(size)/float64(multiplier), u)
+			}
+		}
 
+		multiplier /= 1024
+	}
+
+	return "0 B"
+}
+
+// Limitations:
+// * doesn't work with word-addresses flash array
+// * doesn't work with some repro carts's saves (or more precisely lack of save) as they don't necessarily report open bus values
+func ProbeDeviceForKnownSizes(r WordReaderAt, baseAddress Address, knownSizes []int, openBusValidation, mirrorValidaton, maxRandOffset int, l Logger) (int, error) {
+	// Ensure that size tests are done in increasing order
+	// so that we report the smallest knownSize that exhibit mirroring / open bus.
+	sort.Ints(knownSizes)
+	for _, s := range knownSizes {
+
+		// Reset validations counters
+		nOpenBus := openBusValidation
+		nMirror := mirrorValidaton
+
+		log(l, "Probing for size: %s\n", strByteSize(s))
+		for {
+			offset := rand.Intn(maxRandOffset)
+
+			// Check for open-bus behavior
+			a := baseAddress + Address(s+offset)
+			openBus := uint32(uint16(a))<<16 | uint32(uint16(a))
+			log(l, "Probing @%08x=", a)
+			w, err := r.ReadWordAt(a)
+			if err != nil {
+				log(l, "%s\n", err)
+				return 0, err
+			}
+			log(l, "%08x", w)
+
+			if w == openBus {
+				log(l, ": open bus\n")
+				if nOpenBus--; nOpenBus <= 0 {
+					break
+				}
+				continue
+			}
+
+			// Check for mirroring behavior (only for a != a0 eg. size != 0)
+			a0 := baseAddress + Address(offset)
+			if a != a0 {
+				log(l, " and @%08x=", a0)
+				w0, err := r.ReadWordAt(a0)
+				if err != nil {
+					log(l, "%s\n", err)
+					return 0, err
+				}
+				log(l, "%08x", w0)
+
+				if w == w0 {
+					log(l, ": mirror value\n")
+					if nMirror--; nMirror <= 0 {
+						break
+					}
+					continue
+				}
+			}
+
+			log(l, ": normal value\n")
+			break
+		}
+
+		if nOpenBus <= 0 || nMirror <= 0 {
+			log(l, "size %s\n", strByteSize(s))
+			return s, nil
+		}
+	}
+
+	return 0, ErrSizeProbeFailure
+}
 
 // Helper function which will try to do a single burst write if supported,
 // and fallback to many IO writes otherwise.
@@ -49,7 +141,7 @@ type BurstWriterAt interface {
 // Note that address LSB is usually ignored by PI devices.
 func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (int, error) {
 	// Check interfaces precondition
-	if len(data) % 4 != 0 {
+	if len(data)%4 != 0 {
 		return 0, fmt.Errorf("burst size is not a multiple of 4 (%d)", len(data))
 	}
 
@@ -67,7 +159,7 @@ func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (i
 	// IO fallback
 	for i := 0; i < len(data); i += 4 {
 		u32 := binary.BigEndian.Uint32(data[i : i+4])
-		if err := w.WriteWordAt(u32, address + Address(i)); err != nil {
+		if err := w.WriteWordAt(u32, address+Address(i)); err != nil {
 			return i, err
 		}
 	}
@@ -77,17 +169,16 @@ func WriteBurstWithIOFallbackAt(w WordWriterAt, data []byte, address Address) (i
 
 // Adapter
 type BurstReaderAtFunc func([]byte, Address) error
+
 func (b BurstReaderAtFunc) ReadBurstAt(data []byte, address Address) error {
 	return b(data, address)
 }
 
 type BurstWriterAtFunc func([]byte, Address) error
+
 func (b BurstWriterAtFunc) WriteBurstAt(data []byte, address Address) error {
 	return b(data, address)
 }
-
-
-
 
 type BurstAtFunc func([]byte, Address) error
 
@@ -97,11 +188,11 @@ type BurstAtFunc func([]byte, Address) error
 // pageBits must be greater or equal to 2.
 func SplitBursts(ctx context.Context, data []byte, address Address, pageBits int, burstAt BurstAtFunc) (int, error) {
 	// Check preconditions
-	if len(data) % 4 != 0 {
+	if len(data)%4 != 0 {
 		return 0, fmt.Errorf("burst size is not a multiple of 4 (%d)", len(data))
 	}
 
-	if address % 4 != 0 {
+	if address%4 != 0 {
 		return 0, fmt.Errorf("address is not a multiple of 4 (%08x)", address)
 	}
 
@@ -135,7 +226,6 @@ func SplitBursts(ctx context.Context, data []byte, address Address, pageBits int
 
 	return idx, nil
 }
-
 
 func alignDown(address Address, bits int) Address {
 	mask := Address((1 << bits) - 1)

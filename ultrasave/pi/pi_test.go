@@ -51,6 +51,34 @@ func hexDump(data []byte) string {
 	return b.String()
 }
 
+func TestStrByteSize(t *testing.T) {
+	testCases := []struct {
+		size   int
+		output string
+	}{
+		{size: 0, output: "0 B"},
+		{size: 1, output: "1 B"},
+		{size: 1023, output: "1023 B"},
+		{size: 1024, output: "1 KiB"},
+		{size: 1025, output: "1.0 KiB"},
+		{size: 1996, output: "1.9 KiB"},
+		{size: 1997, output: "2.0 KiB"},
+		{size: 2047, output: "2.0 KiB"},
+		{size: 2048, output: "2 KiB"},
+		{size: 2099, output: "2.0 KiB"},
+		{size: 2100, output: "2.1 KiB"},
+		{size: 4 * 1024 * 1024, output: "4 MiB"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("size=%d", tc.size), func(t *testing.T) {
+			if expected, got := tc.output, strByteSize(tc.size); expected != got {
+				t.Errorf("unexpected result: %s != %s", expected, got)
+			}
+		})
+	}
+}
+
 func TestPiRead(t *testing.T) {
 
 	type ReadBurstInfo struct {

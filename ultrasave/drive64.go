@@ -33,41 +33,46 @@ func New64DriveAdapters(d *drive64.Device) interface{} {
 		piBurstWriterAt
 		joybusExecuter
 	}{
-			piWordReaderAt{d},
-			piWordWriterAt{d},
-			piBurstReaderAt{d},
-			piBurstWriterAt{d},
-			joybusExecuter{d},
+		piWordReaderAt{d},
+		piWordWriterAt{d},
+		piBurstReaderAt{d},
+		piBurstWriterAt{d},
+		joybusExecuter{d},
 	}
 }
 
 // Implements pi.WordReaderAt
-type piWordReaderAt struct { *drive64.Device }
+type piWordReaderAt struct{ *drive64.Device }
+
 func (d piWordReaderAt) ReadWordAt(address pi.Address) (uint32, error) {
 	return d.CmdStandAlonePiRead32(uint32(address))
 }
 
 // Implements pi.WordWriterAt
-type piWordWriterAt struct { *drive64.Device }
+type piWordWriterAt struct{ *drive64.Device }
+
 func (d piWordWriterAt) WriteWordAt(word uint32, address pi.Address) error {
 	return d.CmdStandAlonePiWrite32(uint32(address), word)
 }
 
 // Implements pi.BurstReaderAt
-type piBurstReaderAt struct { *drive64.Device }
+type piBurstReaderAt struct{ *drive64.Device }
+
 func (d piBurstReaderAt) ReadBurstAt(data []byte, address pi.Address) error {
 	return d.CmdStandAlonePiReadBurst(uint32(address), data)
 
 }
 
 // Implements pi.BurstWriterAt
-type piBurstWriterAt struct { *drive64.Device }
+type piBurstWriterAt struct{ *drive64.Device }
+
 func (d piBurstWriterAt) WriteBurstAt(data []byte, address pi.Address) error {
 	return d.CmdStandAlonePiWriteBurst(uint32(address), data)
 }
 
 // Implements joybus.Executer interface
-type joybusExecuter struct { *drive64.Device }
+type joybusExecuter struct{ *drive64.Device }
+
 func (d joybusExecuter) Execute(cmd joybus.Command, tx, rx []byte) error {
 	return d.CmdStandAloneSiOperation(append([]byte{byte(cmd)}, tx...), rx)
 }
