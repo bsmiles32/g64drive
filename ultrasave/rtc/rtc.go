@@ -47,7 +47,7 @@ func (d *Rtc) readBlock(block Block, data []byte) error {
 		return ErrInvalidSize
 	}
 
-	if err := d.Joybus.Execute(cmdRead, []byte{byte(block)}, data); err != nil {
+	if err := d.Execute(cmdRead, []byte{byte(block)}, data); err != nil {
 		return err
 	}
 
@@ -65,7 +65,7 @@ func (d *Rtc) writeBlock(block Block, data []byte) (joybus.Status, error) {
 	tx := append([]byte{byte(block)}, data...)
 	rx := make([]byte, 1)
 
-	if err := d.Joybus.Execute(cmdWrite, tx, rx); err != nil {
+	if err := d.Execute(cmdWrite, tx, rx); err != nil {
 		return 0, err
 	}
 

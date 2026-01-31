@@ -1,6 +1,9 @@
 package ultrasave
 
 import (
+	"errors"
+	"time"
+
 	"github.com/rasky/g64drive/drive64"
 	"github.com/rasky/g64drive/ultrasave/joybus"
 	"github.com/rasky/g64drive/ultrasave/pi"
@@ -17,12 +20,12 @@ func New64DriveAdapters(d *drive64.Device) interface{} {
 			piWordReaderAt
 			piWordWriterAt
 			piBurstReaderAt
-			joybusExecuter
+			joybusController
 		}{
 			piWordReaderAt{d},
 			piWordWriterAt{d},
 			piBurstReaderAt{d},
-			joybusExecuter{d},
+			joybusController{d},
 		}
 	}
 
@@ -31,13 +34,13 @@ func New64DriveAdapters(d *drive64.Device) interface{} {
 		piWordWriterAt
 		piBurstReaderAt
 		piBurstWriterAt
-		joybusExecuter
+		joybusController
 	}{
 		piWordReaderAt{d},
 		piWordWriterAt{d},
 		piBurstReaderAt{d},
 		piBurstWriterAt{d},
-		joybusExecuter{d},
+		joybusController{d},
 	}
 }
 
@@ -70,9 +73,23 @@ func (d piBurstWriterAt) WriteBurstAt(data []byte, address pi.Address) error {
 	return d.CmdStandAlonePiWriteBurst(uint32(address), data)
 }
 
-// Implements joybus.Executer interface
-type joybusExecuter struct{ *drive64.Device }
+// Implements joybus.Controller interface
+type joybusController struct{ *drive64.Device }
 
-func (d joybusExecuter) Execute(cmd joybus.Command, tx, rx []byte) error {
+func (d joybusController) Execute(cmd joybus.Command, tx, rx []byte) error {
 	return d.CmdStandAloneSiOperation(append([]byte{byte(cmd)}, tx...), rx)
+}
+
+func (d joybusController) Unfreeze(err error) bool {
+	if errors.Is(err, drive64.ErrFrozen) {
+		// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
+		// so SI device can accept further commands (after having received an unknown command).
+		// I don't have a good understanding of why this work and why this is needed,
+		// but it seems to work on 64drive HW1 FW2.03 and 64drive HW2 FW2.05 (linux).
+		time.Sleep(2700 * time.Millisecond)
+		d.Reset()
+		return true
+	}
+
+	return false
 }

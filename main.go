@@ -11,7 +11,6 @@ import (
 	"hash/crc32"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,12 +22,13 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/rasky/g64drive/drive64"
 	"github.com/rasky/g64drive/ultrasave"
-	"github.com/rasky/g64drive/ultrasave/eeprom"
+	//"github.com/rasky/g64drive/ultrasave/eeprom"
 	"github.com/rasky/g64drive/ultrasave/flash"
 	"github.com/rasky/g64drive/ultrasave/joybus"
+	"github.com/rasky/g64drive/ultrasave/logger"
 	"github.com/rasky/g64drive/ultrasave/pi"
-	"github.com/rasky/g64drive/ultrasave/rom"
-	"github.com/rasky/g64drive/ultrasave/rtc"
+	//"github.com/rasky/g64drive/ultrasave/rom"
+	//"github.com/rasky/g64drive/ultrasave/rtc"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -862,238 +862,6 @@ func cmdUltraSaveDownload(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func joybusProbe(dev *drive64.Device) (joybus.Device, error) {
-	c, ok := ultrasave.New64DriveAdapters(dev).(joybus.Controller)
-	if !ok {
-		return nil, fmt.Errorf("device doesn't support joybus controller interface")
-	}
-
-	jdev := joybus.DeviceImpl{Joybus: c}
-
-	probes := []struct {
-		class   string
-		info    func() (joybus.DeviceID, joybus.Status, error)
-		devices map[joybus.DeviceID]struct {
-			name    string
-			factory func() joybus.Device
-		}
-	}{
-		{
-			class: "regular",
-			info:  func() (joybus.DeviceID, joybus.Status, error) { return jdev.Info() },
-			devices: map[joybus.DeviceID]struct {
-				name    string
-				factory func() joybus.Device
-			}{
-				eeprom.ID4kb: {
-					name:    "EEPROM 4kb",
-					factory: func() joybus.Device { return &eeprom.Eeprom{jdev} },
-				},
-				eeprom.ID16kb: {
-					name:    "EEPROM 16kb",
-					factory: func() joybus.Device { return &eeprom.Eeprom{jdev} },
-				},
-			},
-		},
-		{
-			class: "rtc",
-			info:  func() (joybus.DeviceID, joybus.Status, error) { return (&rtc.Rtc{jdev}).Info() },
-			devices: map[joybus.DeviceID]struct {
-				name    string
-				factory func() joybus.Device
-			}{
-				rtc.ID: {
-					name:    "RTC",
-					factory: func() joybus.Device { return &rtc.Rtc{jdev} },
-				},
-			},
-		},
-	}
-
-	for _, p := range probes {
-		vprintf("Probing for %s Joybus devices\n", p.class)
-		devID, _, err := p.info()
-
-		if err == nil {
-			// We didn't get any response from joybus device, unfreeze the 64drive/SI device
-			// and try next probing method
-		} else if errors.Is(err, drive64.ErrFrozen) {
-			// XXX: This "magic" procedure allows to "unfreeze" 64drive / SI device
-			// so SI device can accept further commands (after having received an unknown command).
-			// I don't have a good understanding of why this work and why this is needed,
-			// but it seems to work on 64drive HW1 FW2.03 and 64drive HW2 FW2.05 (linux).
-			time.Sleep(2700 * time.Millisecond)
-			dev.Reset()
-			continue
-		} else {
-			return nil, err
-		}
-
-		// Try next probing method if we get a Zero DeviceID
-		if devID == 0x0000 {
-			continue
-		}
-
-		// Either return a device using specific factory
-		// or just a generic joybus device impl if device ID is unknown.
-		if device, ok := p.devices[devID]; ok {
-			printf("Found %s (ID = %04x)\n", device.name, devID)
-			return device.factory(), nil
-		} else {
-			printf("unknown device ID: %04x\n", devID)
-			return &jdev, nil
-		}
-	}
-
-	printf("No joybus device detected\n")
-	return nil, nil
-}
-
-func cartRomProbe(dev *drive64.Device) (*rom.Rom, error) {
-	c, ok := ultrasave.New64DriveAdapters(dev).(rom.Controller)
-	if !ok {
-		return nil, fmt.Errorf("device doesn't support rom controller interface")
-	}
-	cartRom, err := rom.New(c, rom.WithLogger(pi.LoggerFunc(vprintf)))
-	if err != nil {
-		return nil, err
-	}
-
-	printf("Guessing a ROM size of %d MiB\n", cartRom.Size()/(1024*1024))
-	return cartRom, nil
-}
-
-/*
-Objective of this procedure is to detect the kind of save (None, SRAM, FlashRAM)
-and it's size.
-To prevent any data loss we actively refrain from using write operations at this stage.
-Note that data mapped by FlashRAM at base address depends on it's current mode. It can
-be any of the following buffer: Data Array (=default mode on poweron), Status, SiliconID,
-Internal Page Buffer. Also depending on FlashRAM variant Data Array buffer may be byte
-or word indexed, which complexify detection (as we can't rely on writes).
-*/
-func cartSaveProbe(dev *drive64.Device) error {
-	r, ok := ultrasave.New64DriveAdapters(dev).(interface {
-		pi.WordReaderAt
-		pi.BurstReaderAt
-	})
-	if !ok {
-		return fmt.Errorf("device doesn't support word reader interface")
-	}
-
-	baseAddress := pi.Address(0x08000000)
-
-	// Check if some device is mapped at baseAddress
-	printf("Probing for open-bus values at baseAddress\n")
-	size, err := pi.ProbeDeviceForKnownSizes(r, baseAddress, []int{0}, 5, 5, 32*1024, pi.LoggerFunc(vprintf))
-	if err != nil && err != pi.ErrSizeProbeFailure {
-		return err
-	}
-	if size == 0 && err != pi.ErrSizeProbeFailure {
-		kind := "None"
-		printf("Guessing save type: %s\n", kind)
-		return nil
-	}
-
-	// Check if a word-indexed flash array is mapped at baseAddress
-	// by looking at a mismatch between IO and DMA:
-	// A single DMA at baseAddress (smaller than PI page size) will fetch bytes
-	// that we can compare against IO at corresponding addresses.
-	// For word-indexed flash array, IO read at offset should match DMA at offset/2
-	// and may differ from DMA at offset.
-	// We do this test early because ProbeDeviceForKnownSizes mirror test doesn't work
-	// with word-indexed memory.
-	// Limitation: this test doesn't work if the first 256*128 bytes of flash Data Array
-	// are all the same.
-	printf("Probing for word-indexed flash array\n")
-	data := make([]byte, 256*128)
-	if err := r.ReadBurstAt(data, baseAddress); err != nil {
-		return err
-	}
-	for k := 0; k < (256*128)/4; k++ {
-		// align reads to 4 bytes, but skip offset 0 because
-		// burst and IO will always be equal for byte and word indexed flash.
-		offset := 4 + uint32(rand.Intn(len(data)-4)) & ^uint32(3)
-
-		w, err := r.ReadWordAt(baseAddress + pi.Address(offset))
-		if err != nil {
-			return err
-		}
-		u32_b := binary.BigEndian.Uint32(data[offset : offset+4])
-		u32_w := binary.BigEndian.Uint32(data[offset/2 : offset/2+4])
-		if u32_b != w && u32_w == w {
-			printf("Mismatch between IO and burst (offset=%08x, %08x, %08x). Assuming flash save type\n", offset, w, u32_b)
-
-			kind := "Flash"
-			size := 128 * 1024
-			printf("Guessing save type: %s size: %d KiB\n", kind, size/1024)
-			return nil
-		}
-	}
-
-	// Check if flash SiliconID is mapped at baseAddress:
-	// In SiliconID mode, offset is (mostly) ignored, only burst size matter
-	// and first u32 should match flash.ExpectedTypeID.
-	printf("Probing for flash silicon id\n")
-	data = make([]byte, 8)
-	isFlash := true
-	for k := 0; k < 200; k++ {
-		offset := rand.Intn(0x4000 - 8)
-		if err := r.ReadBurstAt(data, baseAddress+pi.Address(offset)); err != nil {
-			return err
-		}
-
-		u32 := binary.BigEndian.Uint32(data[0:4])
-		if u32 != flash.ExpectedTypeID {
-			isFlash = false
-			break
-		}
-	}
-	if isFlash {
-		printf("Found flash silicon ID (%02x). Assuming flash save type\n", data)
-		kind := "Flash"
-		size := 128 * 1024
-		printf("Guessing save type: %s size: %d KiB\n", kind, size/1024)
-		return nil
-	}
-
-	// TODO?: Handle flash in status and loadpage mode
-	// This is low priority because on poweron flash should be in ReadArray mode,
-	// so these mode can only happen if some previous operations have been done prior probing.
-
-	// Check for known memory size at baseAddress.
-	// Use a large number of mirror validation because in a lot of save content
-	// data is replicated at many addresses which would cause false positive result
-	// for the mirroring test.
-	knownSizes := []int{
-		32 * 1024,  // SRAM (256Kib)
-		96 * 1024,  // Dezaemon 3D SRAM (768Kib)
-		128 * 1024, // Flash (1Mib)
-	}
-	size, err = pi.ProbeDeviceForKnownSizes(r, baseAddress, knownSizes, 5, 2000, 32*1024, pi.LoggerFunc(vprintf))
-	if err != nil {
-		return err
-	}
-
-	// FIXME?: For now, assume that we can distinguish SRAM vs Flash based on size.
-	// This is true for officially released cartridges but may be wrong in the future.
-
-	var kind string
-	switch size {
-	case 32 * 1024:
-		kind = "SRAM"
-	case 96 * 1024:
-		kind = "SRAM"
-	case 128 * 1024:
-		kind = "Flash"
-	default:
-		kind = "Unknown"
-	}
-
-	printf("Guessing save type: %s size: %d KiB\n", kind, size/1024)
-	return nil
-}
-
 func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	dev, err := drive64.NewDeviceSingle()
 	if err != nil {
@@ -1102,30 +870,54 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	defer dev.Close()
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
-	return withStandaloneMode(dev, func() error {
-		/*
-			// Probe Joybus devices
-			_, err := joybusProbe(dev)
-			if err != nil {
-				printf("Error while probing joybus: %w\n", err)
-			}
-		*/
+	udev, ok := ultrasave.New64DriveAdapters(dev).(interface {
+		pi.WordReaderAt
+		pi.BurstReaderAt
+		joybus.Controller
+	})
+	if !ok {
+		return fmt.Errorf("device doesn't support required interfaces")
+	}
 
-		// Probe cart ROM
-		_, err = cartRomProbe(dev)
+	return withStandaloneMode(dev, func() error {
+		// Probe Joybus devices
+		_, err := joybus.Probe(udev, logger.LoggerFunc(vprintf))
 		if err != nil {
-			printf("Error while probing cart ROM: %w\n", err)
+			printf("Error while probing joybus: %w\n", err)
 		}
 
-		// TODO: Add heuristic to guess if some PI device is in Dom2 (Flash / SRAM)
-		err = cartSaveProbe(dev)
+		// Probe cart ROM
+		probedCartRom, err := pi.ProbeCartRom(udev, logger.LoggerFunc(vprintf))
+		if err != nil {
+			printf("Error while probing cart ROM: %w\n", err)
+		} else {
+			printf("Probed Cart ROM @%08x size: %d MiB\n", probedCartRom.BaseAddress, probedCartRom.Size/(1024*1024))
+		}
+
+		// Probe cart Save
+		probedCartSave, err := pi.ProbeCartSave(udev, logger.LoggerFunc(vprintf))
 		if err != nil {
 			printf("Error while probing cart save: %w\n", err)
+		} else {
+			var kind string
+			switch probedCartSave.Device {
+			case pi.None:
+				kind = "None"
+			case pi.ROM:
+				kind = "ROM"
+			case pi.SRAM:
+				kind = "SRAM"
+			case pi.FlashRAM:
+				kind = "FlashRAM"
+			default:
+				kind = "???"
+			}
+			printf("Probed Cart Save @%08x type: %s size: %d KiB\n", probedCartSave.BaseAddress, kind, probedCartSave.Size/1024)
 		}
 
 		// TODO: allow for extended PI probing
 
-		// TODO: give a summary of found devices
+		// TODO: if dump argument, dump cart content
 
 		return nil
 	})

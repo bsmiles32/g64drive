@@ -1,4 +1,4 @@
-package pi
+package logger
 
 // Interface and adapter func that can be used to log messages
 type Logger interface {
@@ -11,7 +11,7 @@ func (l LoggerFunc) Log(s string, args ...interface{}) {
 	l(s, args...)
 }
 
-func log(l Logger, s string, args ...interface{}) {
+func Log(l Logger, s string, args ...interface{}) {
 	if l == nil {
 		return
 	}
