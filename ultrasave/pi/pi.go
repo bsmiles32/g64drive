@@ -39,12 +39,6 @@ type BurstWriterAt interface {
 	WriteBurstAt(data []byte, address Address) error
 }
 
-type Device interface {
-	BaseAddress() Address
-	Size() int
-	//MaxBurstLength() int
-}
-
 // Helper function which will try to do a single burst write if supported,
 // and fallback to many IO writes otherwise.
 // This is helpful to workaround a bug in 64drive FW <2.04.

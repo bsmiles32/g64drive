@@ -27,8 +27,9 @@ import (
 	"github.com/rasky/g64drive/ultrasave/joybus"
 	"github.com/rasky/g64drive/ultrasave/logger"
 	"github.com/rasky/g64drive/ultrasave/pi"
-	//"github.com/rasky/g64drive/ultrasave/rom"
+	_ "github.com/rasky/g64drive/ultrasave/rom"
 	_ "github.com/rasky/g64drive/ultrasave/rtc"
+	_ "github.com/rasky/g64drive/ultrasave/sram"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -871,8 +872,7 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 	vprintf("64drive serial: %v\n", dev.Description().Serial)
 
 	udev, ok := ultrasave.New64DriveAdapters(dev).(interface {
-		pi.WordReaderAt
-		pi.BurstReaderAt
+		pi.ProbeController
 		joybus.Controller
 	})
 	if !ok {
@@ -896,36 +896,31 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Probe cart ROM
-		probedCartRom, err := pi.ProbeCartRom(udev, logger.LoggerFunc(vprintf))
-		if err != nil {
-			printf("Error while probing cart ROM: %w\n", err)
-		} else {
-			printf("Probed Cart ROM @%08x size: %d MiB\n", probedCartRom.BaseAddress, probedCartRom.Size/(1024*1024))
-		}
-
-		// Probe cart Save
-		probedCartSave, err := pi.ProbeCartSave(udev, logger.LoggerFunc(vprintf))
-		if err != nil {
-			printf("Error while probing cart save: %w\n", err)
-		} else {
-			var kind string
-			switch probedCartSave.Device {
-			case pi.None:
-				kind = "None"
-			case pi.ROM:
-				kind = "ROM"
-			case pi.SRAM:
-				kind = "SRAM"
-			case pi.FlashRAM:
-				kind = "FlashRAM"
-			default:
-				kind = "???"
-			}
-			printf("Probed Cart Save @%08x type: %s size: %d KiB\n", probedCartSave.BaseAddress, kind, probedCartSave.Size/1024)
-		}
-
+		// Probe PI devices
 		// TODO: allow for extended PI probing
+		for _, baseAddress := range []pi.Address{0x10000000, 0x08000000} {
+			dtype, size, _, err := pi.ProbeDevice(udev, baseAddress, baseAddress, logger.LoggerFunc(vprintf))
+			if err != nil {
+				printf("Error while probing pi @%08x: %w\n", baseAddress, err)
+			} else {
+				printf("PI device @%08x: %s size: %s\n", baseAddress, dtype, pi.StrByteSize(size))
+			}
+
+			// For SRAM extend probing to detect multi-chip configurations
+			// (Needed for Dezaemon 3D).
+			if dtype == "SRAM" {
+				for _, k := range []int{1, 2, 3} {
+					baseAddress2 := baseAddress + pi.Address(k<<18)
+					dtype, size, _, err := pi.ProbeDevice(udev, baseAddress2, baseAddress, logger.LoggerFunc(vprintf))
+					if err != nil {
+						printf("Error while probing pi @%08x: %w\n", baseAddress2, err)
+					} else {
+						printf("PI device @%08x: %s size: %s\n", baseAddress2, dtype, pi.StrByteSize(size))
+					}
+
+				}
+			}
+		}
 
 		// TODO: if dump argument, dump cart content
 

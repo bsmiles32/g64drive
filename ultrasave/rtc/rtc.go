@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrInvalidSize = errors.New("invalid block access size")
+	ErrInvalidSize  = errors.New("invalid block access size")
 	ErrInvalidBlock = errors.New("invalid block number")
 )
 
@@ -18,8 +18,8 @@ func init() {
 	joybus.RegisterDevices(joybus.RegisteredDevices{
 		Probe: joybus.OrderedProbingCommand{
 			Priority: 0,
-			Name: "rtc",
-			Command: cmdInfo,
+			Name:     "rtc",
+			Command:  cmdInfo,
 		},
 		Factories: joybus.Factories{
 			ID: joybus.Factory{
@@ -58,7 +58,7 @@ type Rtc struct {
 }
 
 func New(c joybus.Controller) *Rtc {
-	return &Rtc{ joybus.DeviceImpl{ c } }
+	return &Rtc{joybus.DeviceImpl{c}}
 }
 
 func factory(_ joybus.DeviceID, c joybus.Controller) joybus.Device { return New(c) }
@@ -80,7 +80,7 @@ func (d *Rtc) readBlock(block Block, data []byte) (joybus.Status, error) {
 	}
 
 	// Return block data and status byte
-	buf := make([]byte, blockSize + 1)
+	buf := make([]byte, blockSize+1)
 	if err := d.Execute(cmdRead, []byte{byte(block)}, buf); err != nil {
 		return 0, err
 	}

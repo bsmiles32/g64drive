@@ -1,4 +1,4 @@
-package rom
+package sram
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 
 func init() {
 	pi.RegisterDeviceClass(pi.DeviceClass{
-		Priority: 0,
-		Name:     "ROM",
+		Priority: 2,
+		Name:     "SRAM",
 		Probe:    probe,
 		Factory:  factory,
 	})
@@ -22,41 +22,42 @@ var (
 	ErrInvalidOffsetSize            = errors.New("invalid offset / size")
 )
 
-// ROM are usually mapped at PI address 0x10000000.
-const DefaultBaseAddress = pi.Address(0x10000000)
+// SRAM are usually mapped at PI address 0x08000000.
+const DefaultBaseAddress = pi.Address(0x08000000)
 
-// This rom package requires these interfaces.
+// This sram package requires these interfaces.
 type Controller interface {
 	pi.WordReaderAt
+	pi.WordWriterAt
 	pi.BurstReaderAt
 }
 
-type Rom struct {
+type SRAM struct {
 	pi          Controller
 	baseAddress pi.Address
 	size        int
 }
 
-func (r *Rom) BaseAddress() pi.Address {
+func (r *SRAM) BaseAddress() pi.Address {
 	return r.baseAddress
 }
 
-func (r *Rom) Size() int {
+func (r *SRAM) Size() int {
 	return r.size
 }
 
-type RomOption func(*Rom) error
+type SRAMOption func(*SRAM) error
 
 // WithBaseAddress allows to override default base address.
-func WithBaseAddress(baseAddress pi.Address) RomOption {
-	return func(r *Rom) error {
+func WithBaseAddress(baseAddress pi.Address) SRAMOption {
+	return func(r *SRAM) error {
 		r.baseAddress = baseAddress
 		return nil
 	}
 }
 
-func New(pi Controller, size int, opts ...RomOption) (*Rom, error) {
-	r := &Rom{
+func New(pi Controller, size int, opts ...SRAMOption) (*SRAM, error) {
+	r := &SRAM{
 		pi:          pi,
 		baseAddress: DefaultBaseAddress,
 		size:        size,
@@ -71,7 +72,7 @@ func New(pi Controller, size int, opts ...RomOption) (*Rom, error) {
 	return r, nil
 }
 
-func (r *Rom) Read(ctx context.Context, offset int, data []byte) error {
+func (r *SRAM) Read(ctx context.Context, offset int, data []byte) error {
 	// Validate offset size
 	if offset < 0 || offset >= r.size {
 		return ErrInvalidOffsetSize
@@ -83,51 +84,37 @@ func (r *Rom) Read(ctx context.Context, offset int, data []byte) error {
 		return ErrInvalidOffsetSize
 	}
 
-	return pi.Read(ctx, data, r.baseAddress+pi.Address(offset), 9, r.pi)
+	return pi.Read(ctx, data, r.baseAddress+pi.Address(offset), 15, r.pi)
 }
 
 func probe(c pi.ProbeController, baseAddress pi.Address, l logger.Logger) (bool, int, error) {
-	// Skip if ROM not at defaultBaseAddress
-	if baseAddress != DefaultBaseAddress {
+	// Skip if SRAM not at defaultBaseAddress + (k << 18) (k = 0..3)
+	if baseAddress&0xfff3ffff != DefaultBaseAddress {
 		return false, 0, nil
 	}
 
-	const MiB = 1024 * 1024
-
-	logger.Log(l, "Probing for ROM at %08x\n", baseAddress)
+	logger.Log(l, "Probing for SRAM at %08x\n", baseAddress)
 
 	// Assume that a device is present (eg. open-bus test at baseAddress is already negative)
 
-	// TODO?: add a check about PI_BSD config @baseAddress ?
-	// TODO?: add a check about IPL3 hash ?
-
+	// Check for known memory size at baseAddress.
+	// Use a large number of mirror validation because in a lot of save content
+	// data is replicated at many addresses which would cause false positive result
+	// for the mirroring test.
 	knownSizes := []int{
-		4 * MiB,
-		8 * MiB,
-		12 * MiB,
-		16 * MiB,
-		20 * MiB,
-		24 * MiB,
-		28 * MiB,
-		32 * MiB,
-		40 * MiB,
-		64 * MiB,
+		32 * 1024, // SRAM (256Kib / 32KiB)
 	}
 
-	size, err := pi.ProbeDeviceForKnownSizes(c, baseAddress, knownSizes, 5, 5, 32*1024, l)
-	if errors.Is(err, pi.ErrSizeProbeFailure) {
-		// TODO: try another approach for non standard cart ROM ? (homebrews ?)
-		// For now assume a Max ROM size of 64MiB
-		size = 64 * MiB
-		err = nil
-		logger.Log(l, "Unable to guess ROM size, assuming %s", pi.StrByteSize(size))
-	} else if err != nil {
+	size, err := pi.ProbeDeviceForKnownSizes(c, baseAddress, knownSizes, 5, 4*1024, 32*1024, l)
+	if err != nil && !errors.Is(err, pi.ErrSizeProbeFailure) {
 		return false, 0, err
-	} else {
-		logger.Log(l, "Guessing a ROM size of %s\n", pi.StrByteSize(size))
+	}
+	if err == nil {
+		return true, size, nil
 	}
 
-	return true, size, nil
+	// Non conclusive
+	return false, 0, nil
 }
 
 func factory(c interface{}, baseAddress pi.Address, size int) (interface{}, error) {

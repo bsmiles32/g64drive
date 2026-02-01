@@ -7,6 +7,15 @@ import (
 	"github.com/rasky/g64drive/ultrasave/pi"
 )
 
+func init() {
+	pi.RegisterDeviceClass(pi.DeviceClass{
+		Priority: 1,
+		Name:     "Flash",
+		Probe:    probe,
+		Factory:  factory,
+	})
+}
+
 // Flash are usually mapped at PI address 0x08000000.
 const DefaultBaseAddress = pi.Address(0x08000000)
 
@@ -70,4 +79,13 @@ func layoutFromSiliconID(sID *SiliconID) Layout {
 	default:
 		return Layout_128B_128_8
 	}
+}
+
+func factory(c interface{}, baseAddress pi.Address, size int) (interface{}, error) {
+	pi, ok := c.(Controller)
+	if !ok {
+		return nil, ErrControllerRequirementsNotMet
+	}
+
+	return New(pi, WithBaseAddress(baseAddress))
 }

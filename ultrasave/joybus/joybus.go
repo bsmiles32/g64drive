@@ -17,7 +17,6 @@ type Controller interface {
 type Command uint8
 
 // Joybus common commands.
-// All joybus devices should support these.
 // Commands specific to each device are defined in their respective packages.
 const (
 	cmdInfo  = Command(0x00)
@@ -28,7 +27,9 @@ type DeviceID uint16
 type Status uint8
 
 type Device interface {
+	// Assume all joybus devices support Info command
 	Info() (DeviceID, Status, error)
+	// TOVERIFY: does all joybus devices support this ?
 	Reset() (DeviceID, Status, error)
 }
 

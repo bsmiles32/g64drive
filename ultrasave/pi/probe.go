@@ -1,7 +1,6 @@
 package pi
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -14,22 +13,7 @@ var (
 	ErrSizeProbeFailure = errors.New("unable to probe device size")
 )
 
-type DeviceType int
-
-const (
-	None DeviceType = iota
-	FlashRAM
-	ROM
-	SRAM
-)
-
-type ProbedDevice struct {
-	Device      DeviceType
-	BaseAddress Address
-	Size        int
-}
-
-func strByteSize(size int) string {
+func StrByteSize(size int) string {
 	units := []string{"MiB", "KiB", "B"}
 
 	multiplier := int(1024 * 1024)
@@ -50,9 +34,11 @@ func strByteSize(size int) string {
 
 // Limitations:
 // * doesn't work with word-addresses flash array
-// * doesn't work with some repro carts's saves (or more precisely lack of save) as they don't necessarily report open bus values
+// * doesn't work with some repro cart saves (or more precisely lack of save) as they don't necessarily report open bus values
 // * doesn't work when data is indistinguishable from mirroring
-func probeDeviceForKnownSizes(r WordReaderAt, baseAddress Address, knownSizes []int, openBusValidation, mirrorValidaton, maxRandOffset int, l logger.Logger) (int, error) {
+// FIXME: API is misleading because it doesn't really test that given sizes are the real device size
+// just that addresses after the tested address returns open-bus / mirroring values.
+func ProbeDeviceForKnownSizes(r WordReaderAt, baseAddress Address, knownSizes []int, openBusValidation, mirrorValidaton, maxRandOffset int, l logger.Logger) (int, error) {
 	// Ensure that size tests are done in increasing order
 	// so that we report the smallest knownSize that exhibit mirroring / open bus.
 	sort.Ints(knownSizes)
@@ -62,20 +48,20 @@ func probeDeviceForKnownSizes(r WordReaderAt, baseAddress Address, knownSizes []
 		nOpenBus := openBusValidation
 		nMirror := mirrorValidaton
 
-		logger.Log(l, "Probing for size: %s\n", strByteSize(s))
+		logger.Log(l, "Probing for size: %s\n", StrByteSize(s))
 		for {
 			offset := rand.Intn(maxRandOffset)
 
 			// Check for open-bus behavior
 			a := baseAddress + Address(s+offset)
 			openBus := uint32(uint16(a))<<16 | uint32(uint16(a))
-			logger.Log(l, "Probing @%08x=", a)
+			logger.Log(l, "Probing @%08x", a)
 			w, err := r.ReadWordAt(a)
 			if err != nil {
-				logger.Log(l, "%s\n", err)
+				logger.Log(l, ": %s\n", err)
 				return 0, err
 			}
-			logger.Log(l, "%08x", w)
+			logger.Log(l, "=%08x", w)
 
 			if w == openBus {
 				logger.Log(l, ": open bus\n")
@@ -117,174 +103,65 @@ func probeDeviceForKnownSizes(r WordReaderAt, baseAddress Address, knownSizes []
 	return 0, ErrSizeProbeFailure
 }
 
-// Heuristic to detect (presence and) size of cart ROM
-func ProbeCartRom(r WordReaderAt, l logger.Logger) (ProbedDevice, error) {
-	const MiB = 1024 * 1024
-
-	baseAddress := Address(0x10000000)
-
-	// Do a first pass with official sizes
-	// Assuming that we will deal primarily with official carts,
-	// And that a ROM is always present.
-	knownSizes := []int{
-		4 * MiB,
-		8 * MiB,
-		12 * MiB,
-		16 * MiB,
-		20 * MiB,
-		24 * MiB,
-		28 * MiB,
-		32 * MiB,
-		40 * MiB,
-		64 * MiB,
-	}
-
-	size, err := probeDeviceForKnownSizes(r, baseAddress, knownSizes, 5, 5, 32*1024, l)
-	if errors.Is(err, ErrSizeProbeFailure) {
-		// TODO: try another approach for non standard cart ROM ? (homebrews ?)
-		// For now assume a Max ROM size of 64MiB
-		size = 64 * MiB
-		err = nil
-		logger.Log(l, "Unable to guess ROM size, assuming %d MiB", size/MiB)
-	} else if err != nil {
-		return ProbedDevice{}, err
-	} else {
-		logger.Log(l, "Guessing a ROM size of %d MiB\n", size/MiB)
-	}
-
-	return ProbedDevice{
-		Device:      ROM,
-		BaseAddress: baseAddress,
-		Size:        size,
-	}, nil
-}
-
-/*
-Objective of this procedure is to detect the kind of save (None, SRAM, FlashRAM)
-and it's size.
-To prevent any data loss we actively refrain from using write operations at this stage.
-Note that data mapped by FlashRAM at base address depends on it's current mode. It can
-be any of the following buffer: Data Array (=default mode on poweron), Status, SiliconID,
-Internal Page Buffer. Also depending on FlashRAM variant Data Array buffer may be byte
-or word indexed, which complexify detection (as we can't rely on writes).
-*/
-func ProbeCartSave(r interface {
+type ProbeController interface {
 	WordReaderAt
 	BurstReaderAt
-}, l logger.Logger) (ProbedDevice, error) {
-	baseAddress := Address(0x08000000)
+}
 
-	// Check if some device is mapped at baseAddress
-	logger.Log(l, "Probing for open-bus values at baseAddress\n")
-	size, err := probeDeviceForKnownSizes(r, baseAddress, []int{0}, 5, 5, 32*1024, l)
+// TODO?: might want to return a pi.Device interface (instead of any) depending on what we want to do with probe result
+type DeviceFactoryFunc func(controller interface{}, baseAddress Address, size int) (interface{}, error)
+type DeviceProbeFunc func(c ProbeController, baseAddress Address, l logger.Logger) (bool, int, error)
+
+type DeviceClass struct {
+	Name     string
+	Factory  DeviceFactoryFunc
+	Priority int
+	Probe    DeviceProbeFunc
+}
+
+func RegisterDeviceClass(d DeviceClass) {
+	registeredClasses = append(registeredClasses, d)
+	sort.SliceStable(registeredClasses, func(i, j int) bool { return registeredClasses[i].Priority < registeredClasses[j].Priority })
+}
+
+var (
+	registeredClasses = []DeviceClass{}
+)
+
+func ProbeDevice(c ProbeController, baseAddress, baseAddress0 Address, l logger.Logger) (string, int, *DeviceFactoryFunc, error) {
+	// Always try open-bus / mirroring vs baseAddress0 first to ensure that a real device is present
+	// The mirroring test is useful for multi-non-contiguous-chip configuration (like Dezaemon 3D 3x32KiB SRAM).
+	if match, size, err := probeForNoDevice(c, baseAddress, baseAddress0, l); err != nil {
+		return "", 0, nil, err
+	} else if match {
+		return "None", size, nil, nil
+	}
+
+	for _, d := range registeredClasses {
+		if match, size, err := d.Probe(c, baseAddress, l); err != nil {
+			return "", 0, nil, err
+		} else if match {
+			return d.Name, size, &d.Factory, nil
+		}
+	}
+
+	return "Unknown", 0, nil, nil
+}
+
+func probeForNoDevice(c ProbeController, baseAddress, baseAddress0 Address, l logger.Logger) (bool, int, error) {
+	logger.Log(l, "Probing for open-bus/mirroring values at %08x vs %08x\n", baseAddress, baseAddress0)
+
+	deltaBase := int(baseAddress - baseAddress0)
+
+	size, err := ProbeDeviceForKnownSizes(c, baseAddress0, []int{0 + deltaBase}, 5, 4*1024, 32*1024, l)
 	if err != nil && !errors.Is(err, ErrSizeProbeFailure) {
-		return ProbedDevice{}, err
+		return false, 0, err
 	}
-	if size == 0 && !errors.Is(err, ErrSizeProbeFailure) {
-		return ProbedDevice{
-			Device:      None,
-			BaseAddress: baseAddress,
-			Size:        0,
-		}, nil
+	if size == deltaBase && !errors.Is(err, ErrSizeProbeFailure) {
+		// Assume that size is not meaningful when no device is present
+		return true, 0, nil
 	}
 
-	// Check if a word-indexed flash array is mapped at baseAddress
-	// by looking at a mismatch between IO and DMA:
-	// A single DMA at baseAddress (smaller than PI page size) will fetch bytes
-	// that we can compare against IO at corresponding addresses.
-	// For word-indexed flash array, IO read at offset should match DMA at offset/2
-	// and may differ from DMA at offset.
-	// We do this test early because ProbeDeviceForKnownSizes mirror test doesn't work
-	// with word-indexed memory.
-	// Limitation: this test doesn't work if the first 256*128 bytes of flash Data Array
-	// are all the same.
-	logger.Log(l, "Probing for word-indexed flash array\n")
-	data := make([]byte, 256*128)
-	if err := r.ReadBurstAt(data, baseAddress); err != nil {
-		return ProbedDevice{}, err
-	}
-	for k := 0; k < (256*128)/4; k++ {
-		// align reads to 4 bytes, but skip offset 0 because
-		// burst and IO will always be equal for byte and word indexed flash.
-		offset := 4 + uint32(rand.Intn(len(data)-4)) & ^uint32(3)
-
-		w, err := r.ReadWordAt(baseAddress + Address(offset))
-		if err != nil {
-			return ProbedDevice{}, err
-		}
-		u32_b := binary.BigEndian.Uint32(data[offset : offset+4])
-		u32_w := binary.BigEndian.Uint32(data[offset/2 : offset/2+4])
-		if u32_b != w && u32_w == w {
-			logger.Log(l, "Mismatch between IO and burst (offset=%08x, %08x, %08x). Assuming flash save type\n", offset, w, u32_b)
-			return ProbedDevice{
-				Device:      FlashRAM,
-				BaseAddress: baseAddress,
-				Size:        128 * 1024,
-			}, nil
-		}
-	}
-
-	// Check if flash SiliconID is mapped at baseAddress:
-	// In SiliconID mode, offset is (mostly) ignored, only burst size matter
-	// and first u32 should match flash.ExpectedTypeID.
-	logger.Log(l, "Probing for flash silicon id\n")
-	data = make([]byte, 8)
-	isFlash := true
-	for k := 0; k < 200; k++ {
-		offset := rand.Intn(0x4000 - 8)
-		if err := r.ReadBurstAt(data, baseAddress+Address(offset)); err != nil {
-			return ProbedDevice{}, err
-		}
-
-		u32 := binary.BigEndian.Uint32(data[0:4])
-		if u32 != uint32(0x11118001) {
-			isFlash = false
-			break
-		}
-	}
-	if isFlash {
-		logger.Log(l, "Found flash silicon ID (%02x). Assuming flash save type\n", data)
-		return ProbedDevice{
-			Device:      FlashRAM,
-			BaseAddress: baseAddress,
-			Size:        128 * 1024,
-		}, nil
-	}
-
-	// TODO?: Handle flash in status and loadpage mode
-	// This is low priority because on poweron flash should be in ReadArray mode,
-	// so these mode can only happen if some previous operations have been done prior probing.
-
-	// Check for known memory size at baseAddress.
-	// Use a large number of mirror validation because in a lot of save content
-	// data is replicated at many addresses which would cause false positive result
-	// for the mirroring test.
-	knownSizes := []int{
-		32 * 1024,  // SRAM (256Kib)
-		96 * 1024,  // Dezaemon 3D SRAM (768Kib)
-		128 * 1024, // Flash (1Mib)
-	}
-	size, err = probeDeviceForKnownSizes(r, baseAddress, knownSizes, 5, 2000, 32*1024, l)
-	if err != nil {
-		return ProbedDevice{}, err
-	}
-
-	// FIXME?: For now, assume that we can distinguish SRAM vs Flash based on size.
-	// This is true for officially released cartridges but may be wrong in the future.
-	switch size {
-	case 32 * 1024, 96 * 1024:
-		return ProbedDevice{
-			Device:      SRAM,
-			BaseAddress: baseAddress,
-			Size:        size,
-		}, nil
-	case 128 * 1024:
-		return ProbedDevice{
-			Device:      FlashRAM,
-			BaseAddress: baseAddress,
-			Size:        size,
-		}, nil
-	}
-
-	return ProbedDevice{}, ErrSizeProbeFailure
+	// Not conclusive
+	return false, 0, nil
 }

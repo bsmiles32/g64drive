@@ -57,11 +57,10 @@ type Eeprom struct {
 }
 
 func New(c joybus.Controller) *Eeprom {
-	return &Eeprom{ joybus.DeviceImpl{ c } }
+	return &Eeprom{joybus.DeviceImpl{c}}
 }
 
 func factory(_ joybus.DeviceID, c joybus.Controller) joybus.Device { return New(c) }
-
 
 // Low level command
 // Doesn't take care of timing requirements nor storage unreliability.
