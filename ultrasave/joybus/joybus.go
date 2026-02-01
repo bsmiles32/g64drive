@@ -62,7 +62,7 @@ func Info(joybus Controller, cmd Command) (DeviceID, Status, error) {
 
 type Factory struct {
 	Name    string
-	Factory func(Controller) Device
+	Factory func(DeviceID, Controller) Device
 }
 
 type Factories map[DeviceID]Factory

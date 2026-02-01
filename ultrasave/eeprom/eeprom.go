@@ -1,5 +1,8 @@
 package eeprom
 
+// TODO: verify accepted commands
+// TODO: give higher level functions for IO
+
 import (
 	"errors"
 
@@ -57,11 +60,12 @@ func New(c joybus.Controller) *Eeprom {
 	return &Eeprom{ joybus.DeviceImpl{ c } }
 }
 
-func factory(c joybus.Controller) joybus.Device { return New(c) }
+func factory(_ joybus.DeviceID, c joybus.Controller) joybus.Device { return New(c) }
 
 
 // Low level command
 // Doesn't take care of timing requirements nor storage unreliability.
+// TOVERIFY: does it returns a status byte at the end ?
 func (d *Eeprom) ReadBlock(block Block, data []byte) error {
 	// TODO: test if accesses shorter than 8 bytes are supported
 	if len(data) > blockSize {

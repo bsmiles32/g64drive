@@ -1,5 +1,8 @@
 package rtc
 
+// TODO: verify accepted commands
+// TODO: give higher level functions to set time / alarm, access SRAM, ...
+
 import (
 	"errors"
 
@@ -8,6 +11,7 @@ import (
 
 var (
 	ErrInvalidSize = errors.New("invalid block access size")
+	ErrInvalidBlock = errors.New("invalid block number")
 )
 
 func init() {
@@ -57,7 +61,7 @@ func New(c joybus.Controller) *Rtc {
 	return &Rtc{ joybus.DeviceImpl{ c } }
 }
 
-func factory(c joybus.Controller) joybus.Device { return New(c) }
+func factory(_ joybus.DeviceID, c joybus.Controller) joybus.Device { return New(c) }
 
 // Override DeviceImpl.Info so that it uses proper rtc.cmdInfo
 func (d *Rtc) Info() (joybus.DeviceID, joybus.Status, error) {
@@ -66,17 +70,22 @@ func (d *Rtc) Info() (joybus.DeviceID, joybus.Status, error) {
 
 // Low level command
 // Doesn't take care of timing requirements nor storage unreliability.
-func (d *Rtc) readBlock(block Block, data []byte) error {
+func (d *Rtc) readBlock(block Block, data []byte) (joybus.Status, error) {
 	// TODO: test if accesses shorter than 8 bytes are supported
 	if len(data) > blockSize {
-		return ErrInvalidSize
+		return 0, ErrInvalidSize
+	}
+	if block > 3 {
+		return 0, ErrInvalidBlock
 	}
 
-	if err := d.Execute(cmdRead, []byte{byte(block)}, data); err != nil {
-		return err
+	// Return block data and status byte
+	buf := make([]byte, blockSize + 1)
+	if err := d.Execute(cmdRead, []byte{byte(block)}, buf); err != nil {
+		return 0, err
 	}
-
-	return nil
+	copy(data, buf[:blockSize])
+	return joybus.Status(buf[blockSize]), nil
 }
 
 // Low level command
@@ -85,6 +94,9 @@ func (d *Rtc) writeBlock(block Block, data []byte) (joybus.Status, error) {
 	// TODO: test if accesses shorter than 8 bytes are supported
 	if len(data) > blockSize {
 		return 0, ErrInvalidSize
+	}
+	if block > 3 {
+		return 0, ErrInvalidBlock
 	}
 
 	tx := append([]byte{byte(block)}, data...)
