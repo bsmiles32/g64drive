@@ -32,6 +32,7 @@ type Device interface {
 	Reset() (DeviceID, Status, error)
 }
 
+// XXX: not sure it helps much
 type DeviceImpl struct {
 	Controller
 }
@@ -91,6 +92,8 @@ var (
 	registeredDevices = []RegisteredDevices{}
 )
 
+// To be called by each device that needs to be detected.
+// Can be called at package init time (see rtc and eeprom).
 func RegisterDevices(devices RegisteredDevices) {
 	// Find if probe is already registered
 	var f *Factories
@@ -113,6 +116,9 @@ func RegisterDevices(devices RegisteredDevices) {
 	}
 }
 
+// FIXME?: N64Brew seems to suggest that there can be a theoretical RTC + EEPROM combo
+// here, we only report a single joybus device
+// If that need to change, maybe we could return []{DeviceID, *Factory} and try all probes before returning.
 func Probe(c Controller, l logger.Logger) (DeviceID, *Factory, error) {
 	for _, p := range registeredDevices {
 		logger.Log(l, "Probing for %s Joybus devices: ", p.Probe.Name)
