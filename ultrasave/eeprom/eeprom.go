@@ -2,12 +2,29 @@ package eeprom
 
 import (
 	"errors"
+
 	"github.com/rasky/g64drive/ultrasave/joybus"
 )
 
 var (
 	ErrInvalidSize = errors.New("invalid block access size")
 )
+
+func init() {
+	joybus.RegisterDevices(joybus.RegisteredDevices{
+		Probe: joybus.RegularProbe,
+		Factories: joybus.Factories{
+			ID4Kib: joybus.Factory{
+				Name:    "EEPROM 4Kib",
+				Factory: factory,
+			},
+			ID16Kib: joybus.Factory{
+				Name:    "EEPROM 16Kib",
+				Factory: factory,
+			},
+		},
+	})
+}
 
 // EEPROM are addressed by blocks of 8 bytes.
 const blockSize = 8
@@ -27,14 +44,21 @@ const (
 // There are 2 known EEPROM device ID
 const (
 	// 4kbits = 512 bytes
-	ID4kb = joybus.DeviceID(0x0080)
+	ID4Kib = joybus.DeviceID(0x0080)
 	// 16kbits = 2048 bytes
-	ID16kb = joybus.DeviceID(0x00c0)
+	ID16Kib = joybus.DeviceID(0x00c0)
 )
 
 type Eeprom struct {
 	joybus.DeviceImpl
 }
+
+func New(c joybus.Controller) *Eeprom {
+	return &Eeprom{ joybus.DeviceImpl{ c } }
+}
+
+func factory(c joybus.Controller) joybus.Device { return New(c) }
+
 
 // Low level command
 // Doesn't take care of timing requirements nor storage unreliability.

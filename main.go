@@ -22,13 +22,13 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/rasky/g64drive/drive64"
 	"github.com/rasky/g64drive/ultrasave"
-	//"github.com/rasky/g64drive/ultrasave/eeprom"
+	_ "github.com/rasky/g64drive/ultrasave/eeprom"
 	"github.com/rasky/g64drive/ultrasave/flash"
 	"github.com/rasky/g64drive/ultrasave/joybus"
 	"github.com/rasky/g64drive/ultrasave/logger"
 	"github.com/rasky/g64drive/ultrasave/pi"
 	//"github.com/rasky/g64drive/ultrasave/rom"
-	//"github.com/rasky/g64drive/ultrasave/rtc"
+	_ "github.com/rasky/g64drive/ultrasave/rtc"
 	"github.com/rasky/g64drive/windriver"
 	"github.com/schollz/progressbar/v2"
 	"github.com/spf13/cobra"
@@ -881,9 +881,19 @@ func cmdUltraSaveProbe(cmd *cobra.Command, args []string) error {
 
 	return withStandaloneMode(dev, func() error {
 		// Probe Joybus devices
-		_, err := joybus.Probe(udev, logger.LoggerFunc(vprintf))
+		deviceID, device, err := joybus.Probe(udev, logger.LoggerFunc(vprintf))
 		if err != nil {
 			printf("Error while probing joybus: %w\n", err)
+		} else {
+			if device != nil {
+				printf("Joybus device: %s (ID=%04x)\n", device.Name, deviceID)
+			} else {
+				if deviceID == 0 {
+					printf("Joybus device: None\n")
+				} else {
+					printf("Joybus device: unsupported (ID=%04x)", deviceID)
+				}
+			}
 		}
 
 		// Probe cart ROM

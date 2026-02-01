@@ -2,6 +2,7 @@ package joybus
 
 import (
 	"encoding/binary"
+	"sort"
 
 	"github.com/rasky/g64drive/ultrasave/logger"
 )
@@ -59,40 +60,74 @@ func Info(joybus Controller, cmd Command) (DeviceID, Status, error) {
 	return id, status, nil
 }
 
-func Probe(c Controller, l logger.Logger) (DeviceID, error) {
-	probes := []struct {
-		class   string
-		info    Command
-		devices map[DeviceID]string
-	}{
-		{
-			class: "regular",
-			info:  cmdInfo,
-			devices: map[DeviceID]string{
-				DeviceID(0x0080): "EEPROM 4Kib",
-				DeviceID(0x00c0): "EEPROM 16Kib",
-			},
-		},
-		{
-			class: "rtc",
-			info:  Command(0x06),
-			devices: map[DeviceID]string{
-				DeviceID(0x0010): "RTC",
-			},
-		},
+type Factory struct {
+	Name    string
+	Factory func(Controller) Device
+}
+
+type Factories map[DeviceID]Factory
+
+type OrderedProbingCommand struct {
+	Priority int
+	Name     string
+	Command  Command
+}
+
+type RegisteredDevices struct {
+	Probe     OrderedProbingCommand
+	Factories Factories
+}
+
+var (
+	// Regular devices should use this probe as it is the standard
+	// probing method.
+	// Force higher priority than any >=0 int.
+	RegularProbe = OrderedProbingCommand{
+		Priority: -1,
+		Name:     "regular",
+		Command:  cmdInfo,
 	}
 
-	for _, p := range probes {
-		logger.Log(l, "Probing for %s Joybus devices\n", p.class)
-		devID, _, err := Info(c, p.info)
+	registeredDevices = []RegisteredDevices{}
+)
+
+func RegisterDevices(devices RegisteredDevices) {
+	// Find if probe is already registered
+	var f *Factories
+	for _, d := range registeredDevices {
+		if d.Probe == devices.Probe {
+			f = &d.Factories
+			break
+		}
+	}
+
+	if f == nil {
+		// FIXME: directly insert at sorted position instead of append + sort (would be easier with newer go version)
+		registeredDevices = append(registeredDevices, devices)
+		sort.SliceStable(registeredDevices, func(i, j int) bool { return registeredDevices[i].Probe.Priority < registeredDevices[j].Probe.Priority })
+	} else {
+		// Copy factories into already registered device factories
+		for k, v := range devices.Factories {
+			(*f)[k] = v
+		}
+	}
+}
+
+func Probe(c Controller, l logger.Logger) (DeviceID, *Factory, error) {
+	for _, p := range registeredDevices {
+		logger.Log(l, "Probing for %s Joybus devices: ", p.Probe.Name)
+		devID, _, err := Info(c, p.Probe.Command)
 
 		if err == nil {
+			logger.Log(l, "deviceID=%04x\n", devID)
 		} else if c.Unfreeze(err) {
 			// We didn't get any response from joybus device, unfreeze the 64drive/SI device
 			// and try next probing method
+			logger.Log(l, "no response\n")
 			continue
 		} else {
-			return 0, err
+			logger.Log(l, "error: %v\n", err)
+			return 0, nil, err
 		}
 
 		// Try next probing method if we get a Zero DeviceID
@@ -100,17 +135,15 @@ func Probe(c Controller, l logger.Logger) (DeviceID, error) {
 			continue
 		}
 
-		// Either return a device using specific factory
-		// or just a generic joybus device impl if device ID is unknown.
-		if device, ok := p.devices[devID]; ok {
-			logger.Log(l, "Found %s (ID = %04x)\n", device, devID)
-			return devID, nil
+		if device, ok := p.Factories[devID]; ok {
+			// Found supported device
+			return devID, &device, nil
 		} else {
-			logger.Log(l, "Found unknown device (ID = %04x)\n", devID)
-			return devID, nil
+			// Found unsupported device
+			return devID, nil, nil
 		}
 	}
 
-	logger.Log(l, "No joybus device detected\n")
-	return 0, nil
+	// No device found
+	return 0, nil, nil
 }
